@@ -3,31 +3,38 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:background_fetch/background_fetch.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:isolate';
-import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
+// Alarm manager kaldırıldı; manuel kontrol veya ileride Workmanager ile devam edilecek.
 
 const String kTaskId = 'check_new_chapters';
 
 Future<void> initBackground() async {
-  // Android Alarm Manager ile periyodik tetikleme (SDK uyumlu)
-  await AndroidAlarmManager.initialize();
-  await AndroidAlarmManager.cancel(777001);
-  await AndroidAlarmManager.periodic(
-    const Duration(hours: 3),
-    777001,
-    _alarmEntry,
-    wakeup: true,
-    rescheduleOnReboot: true,
-    allowWhileIdle: true,
+  // BackgroundFetch kurulum
+  await BackgroundFetch.configure(
+    BackgroundFetchConfig(
+      minimumFetchInterval: 180, // dakika cinsinden (3 saat)
+      stopOnTerminate: false,
+      enableHeadless: true,
+      startOnBoot: true,
+      requiresBatteryNotLow: false,
+      requiredNetworkType: NetworkType.ANY,
+    ),
+    (taskId) async {
+      await _alarmEntry();
+      BackgroundFetch.finish(taskId);
+    },
+    (taskId) async {
+      BackgroundFetch.finish(taskId);
+    },
   );
+  await BackgroundFetch.start();
 }
 
 void callbackDispatcher() {}
 
-@pragma('vm:entry-point')
 Future<void> _alarmEntry() async {
     final sp = await SharedPreferences.getInstance();
     final urls = sp.getStringList('tracked_urls') ?? <String>[];
