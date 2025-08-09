@@ -11,6 +11,7 @@ import '../widgets/edit_link_dialog.dart';
 import 'reader_screen.dart';
 import '../../utils/external_open.dart';
 import 'package:share_plus/share_plus.dart';
+import 'about_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -111,10 +112,15 @@ class _HomeScreenState extends State<HomeScreen> {
                   final data = prov.items.map((e) => e.toMap()).toList();
                   final jsonStr = data.toString();
                   await Share.share(jsonStr, subject: 'Kitaplık Dışa Aktarım');
+                } else if (v == 'about') {
+                  if (mounted) {
+                    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AboutScreen()));
+                  }
                 }
               },
               itemBuilder: (c) => const [
                 PopupMenuItem(value: 'export', child: Text('Dışa aktar (paylaş)')),
+                PopupMenuItem(value: 'about', child: Text('Yapımcı')),
               ],
             ),
           ],

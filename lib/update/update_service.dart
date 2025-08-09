@@ -66,10 +66,11 @@ class UpdateService {
     final dio = Dio();
     await dio.download(manifest.apkUrl, savePath);
     if (manifest.sha256 != null) {
-      final bytes = await io.File(savePath).readAsBytes();
+      final f = io.File(savePath);
+      final bytes = await f.readAsBytes();
       final sum = sha256OfBytes(bytes);
       if (sum.toLowerCase() != manifest.sha256!.toLowerCase()) {
-        await io.File(savePath).delete().catchError((_) {});
+        await f.delete().catchError((_) => f);
         return;
       }
     }
