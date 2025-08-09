@@ -3,7 +3,9 @@ import 'dart:io' show Platform;
 
 import 'package:crypto/crypto.dart';
 import 'package:http/http.dart' as http;
-import 'package:ota_update/ota_update.dart';
+import 'dart:io' as io;
+import 'package:dio/dio.dart';
+import 'package:open_filex/open_filex.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 class UpdateManifest {
@@ -59,9 +61,19 @@ class UpdateService {
     if (!Platform.isAndroid) return;
     manifest ??= await fetchManifest();
     if (manifest == null) return;
-    // İsteğe bağlı: SHA256 doğrulaması (ota_update akışı içinde stream doğrulaması yoksa haricen indirip doğrulanabilir)
-    // Basit yaklaşım: doğrudan OTA başlat.
-    await OtaUpdate().execute(manifest.apkUrl, destinationFilename: 'update.apk');
+    final dir = await io.Directory('/sdcard/Download').create(recursive: true);
+    final savePath = '${dir.path}/readerbookmark_update.apk';
+    final dio = Dio();
+    await dio.download(manifest.apkUrl, savePath);
+    if (manifest.sha256 != null) {
+      final bytes = await io.File(savePath).readAsBytes();
+      final sum = sha256OfBytes(bytes);
+      if (sum.toLowerCase() != manifest.sha256!.toLowerCase()) {
+        await io.File(savePath).delete().catchError((_) {});
+        return;
+      }
+    }
+    await OpenFilex.open(savePath);
   }
 
   static String sha256OfBytes(List<int> bytes) => sha256.convert(bytes).toString();
