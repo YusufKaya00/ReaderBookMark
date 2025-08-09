@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'dart:io' as io;
 import 'package:dio/dio.dart';
 import 'package:open_filex/open_filex.dart';
+import 'package:android_intent_plus/android_intent.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 class UpdateManifest {
@@ -61,8 +62,9 @@ class UpdateService {
     if (!Platform.isAndroid) return;
     manifest ??= await fetchManifest();
     if (manifest == null) return;
-    final dir = await io.Directory('/sdcard/Download').create(recursive: true);
-    final savePath = '${dir.path}/readerbookmark_update.apk';
+    // APK'yi app-specific external files dizinine indir
+    final baseDir = await io.Directory('/sdcard/Android/data/com.example.deneme/files/Download').create(recursive: true);
+    final savePath = '${baseDir.path}/readerbookmark_update.apk';
     final dio = Dio();
     await dio.download(manifest.apkUrl, savePath);
     if (manifest.sha256 != null) {
@@ -74,7 +76,18 @@ class UpdateService {
         return;
       }
     }
-    await OpenFilex.open(savePath);
+    // FileProvider URI ile kurulum ekranı aç
+    try {
+      final intent = AndroidIntent(
+        action: 'action_view',
+        data: Uri.file(savePath).toString(),
+        type: 'application/vnd.android.package-archive',
+        flags: <int>[268435456, 1, 2], // FLAG_ACTIVITY_NEW_TASK | GRANT_READ_URI_PERMISSION | GRANT_WRITE_URI_PERMISSION
+      );
+      await intent.launch();
+    } catch (_) {
+      await OpenFilex.open(savePath);
+    }
   }
 
   static String sha256OfBytes(List<int> bytes) => sha256.convert(bytes).toString();
