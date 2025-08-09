@@ -113,6 +113,18 @@ class _HomeScreenState extends State<HomeScreen> {
                   final data = prov.items.map((e) => e.toMap()).toList();
                   final jsonStr = data.toString();
                   await Share.share(jsonStr, subject: 'Kitaplık Dışa Aktarım');
+                } else if (v == 'check_chapters') {
+                  showDialog(
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (_) => const Center(child: CircularProgressIndicator()),
+                  );
+                  await runCheckNow();
+                  if (!mounted) return;
+                  Navigator.of(context).pop();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Yeni bölüm kontrolü tamamlandı.')),
+                  );
                 } else if (v == 'check_update') {
                   // Güncelleme kontrolü
                   showDialog(
@@ -154,6 +166,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 }
               },
               itemBuilder: (c) => const [
+                PopupMenuItem(value: 'check_chapters', child: Text('Yeni bölümleri kontrol et')),
                 PopupMenuItem(value: 'check_update', child: Text('Güncellemeyi kontrol et')),
                 PopupMenuItem(value: 'export', child: Text('Dışa aktar (paylaş)')),
                 PopupMenuItem(value: 'about', child: Text('Yapımcı')),
