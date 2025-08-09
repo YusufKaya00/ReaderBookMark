@@ -11,6 +11,7 @@ import '../widgets/edit_link_dialog.dart';
 import 'reader_screen.dart';
 import '../../utils/external_open.dart';
 import 'package:share_plus/share_plus.dart';
+import '../../update/update_service.dart';
 import 'about_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -112,6 +113,40 @@ class _HomeScreenState extends State<HomeScreen> {
                   final data = prov.items.map((e) => e.toMap()).toList();
                   final jsonStr = data.toString();
                   await Share.share(jsonStr, subject: 'Kitaplık Dışa Aktarım');
+                } else if (v == 'check_update') {
+                  // Güncelleme kontrolü
+                  showDialog(
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (_) => const Center(child: CircularProgressIndicator()),
+                  );
+                  final available = await UpdateService.isUpdateAvailable();
+                  if (!mounted) return;
+                  Navigator.of(context).pop(); // progress kapat
+                  if (available) {
+                    // Onay diyalogu
+                    showDialog(
+                      context: context,
+                      builder: (_) => AlertDialog(
+                        title: const Text('Güncelleme mevcut'),
+                        content: const Text('Yeni sürümü indirmek ve kurmak ister misiniz?'),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(context), child: const Text('İptal')),
+                          ElevatedButton(
+                            onPressed: () async {
+                              Navigator.pop(context);
+                              await UpdateService.startUpdate();
+                            },
+                            child: const Text('Güncelle'),
+                          ),
+                        ],
+                      ),
+                    );
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Uygulama güncel.')),
+                    );
+                  }
                 } else if (v == 'about') {
                   if (mounted) {
                     Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AboutScreen()));
@@ -119,6 +154,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 }
               },
               itemBuilder: (c) => const [
+                PopupMenuItem(value: 'check_update', child: Text('Güncellemeyi kontrol et')),
                 PopupMenuItem(value: 'export', child: Text('Dışa aktar (paylaş)')),
                 PopupMenuItem(value: 'about', child: Text('Yapımcı')),
               ],
