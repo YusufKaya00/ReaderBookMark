@@ -77,12 +77,15 @@ class UpdateService {
       }
     }
     // FileProvider URI ile kurulum ekranı aç
+    // FileProvider URI: content://<authority>/...
+    final file = io.File(savePath);
+    final uriString = 'content://${'${'com.example.deneme'}.fileprovider'}${file.path}';
     try {
       final intent = AndroidIntent(
         action: 'action_view',
-        data: Uri.file(savePath).toString(),
+        data: uriString,
         type: 'application/vnd.android.package-archive',
-        flags: <int>[268435456, 1, 2], // FLAG_ACTIVITY_NEW_TASK | GRANT_READ_URI_PERMISSION | GRANT_WRITE_URI_PERMISSION
+        flags: <int>[268435456, 1, 2],
       );
       await intent.launch();
     } catch (_) {

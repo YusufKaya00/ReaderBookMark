@@ -189,21 +189,17 @@ class _HomeScreenState extends State<HomeScreen> {
         onPressed: _showAdd,
         child: const Icon(Icons.add),
       ),
-      body: Column(
-        children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.only(top: 16, left: 16, right: 16),
-            decoration: const BoxDecoration(
-              image: DecorationImage(
-                image: AssetImage('wp.jpg'),
-                fit: BoxFit.cover,
-                opacity: 0.15,
-              ),
-            ),
-            child: const SizedBox(height: 1),
+      body: Container(
+        decoration: const BoxDecoration(
+          image: DecorationImage(
+            image: AssetImage('wp.jpg'),
+            fit: BoxFit.cover,
+            opacity: 0.15,
           ),
-          Padding(
+        ),
+        child: Column(
+          children: [
+            Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: Row(
               children: [
@@ -236,8 +232,8 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
           ),
-          Expanded(
-            child: FutureBuilder(
+            Expanded(
+              child: FutureBuilder(
               future: library.items.isEmpty ? context.read<LibraryProvider>().load() : null,
               builder: (context, snapshot) {
                 if (library.items.isEmpty) {
@@ -332,8 +328,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 );
               },
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
