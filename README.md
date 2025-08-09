@@ -2,6 +2,9 @@
 
 A new Flutter project.
 
+
+Update: Trigger release build via GitHub Actions.
+
 ## Getting Started
 
 This project is a starting point for a Flutter application.
