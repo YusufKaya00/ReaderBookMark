@@ -3,7 +3,7 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:background_fetch/background_fetch.dart';
+import 'package:workmanager/workmanager.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -12,28 +12,28 @@ import 'package:shared_preferences/shared_preferences.dart';
 const String kTaskId = 'check_new_chapters';
 
 Future<void> initBackground() async {
-  // BackgroundFetch kurulum
-  await BackgroundFetch.configure(
-    BackgroundFetchConfig(
-      minimumFetchInterval: 180, // dakika cinsinden (3 saat)
-      stopOnTerminate: false,
-      enableHeadless: true,
-      startOnBoot: true,
-      requiresBatteryNotLow: false,
-      requiredNetworkType: NetworkType.ANY,
-    ),
-    (taskId) async {
-      await _alarmEntry();
-      BackgroundFetch.finish(taskId);
-    },
-    (taskId) async {
-      BackgroundFetch.finish(taskId);
-    },
+  await Workmanager().initialize(_workCallback, isInDebugMode: false);
+  await Workmanager().registerPeriodicTask(
+    'chapters_periodic',
+    kTaskId,
+    frequency: const Duration(hours: 3),
+    initialDelay: const Duration(minutes: 15),
+    constraints: Constraints(networkType: NetworkType.connected),
+    existingWorkPolicy: ExistingPeriodicWorkPolicy.keep,
   );
-  await BackgroundFetch.start();
 }
 
 void callbackDispatcher() {}
+
+@pragma('vm:entry-point')
+void _workCallback() {
+  Workmanager().executeTask((task, input) async {
+    if (task == kTaskId) {
+      await _alarmEntry();
+    }
+    return Future.value(true);
+  });
+}
 
 Future<void> _alarmEntry() async {
     final sp = await SharedPreferences.getInstance();

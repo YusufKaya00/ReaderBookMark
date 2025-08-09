@@ -191,6 +191,18 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       body: Column(
         children: [
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.only(top: 16, left: 16, right: 16),
+            decoration: const BoxDecoration(
+              image: DecorationImage(
+                image: AssetImage('wp.jpg'),
+                fit: BoxFit.cover,
+                opacity: 0.15,
+              ),
+            ),
+            child: const SizedBox(height: 1),
+          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: Row(
