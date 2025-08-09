@@ -6,29 +6,22 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:workmanager/workmanager.dart';
+// Geçici olarak arka plan kapatıldı (workmanager SDK uyumsuz).
 
 const String kTaskId = 'check_new_chapters';
 
 Future<void> initBackground() async {
-  if (Platform.isAndroid) {
-    await Workmanager().initialize(callbackDispatcher, isInDebugMode: false);
-    await Workmanager().registerPeriodicTask(
-      'check_chapters_periodic',
-      kTaskId,
-      frequency: const Duration(hours: 3),
-      initialDelay: const Duration(minutes: 5),
-      existingWorkPolicy: ExistingWorkPolicy.keep,
-    );
-  }
+  // TODO: SDK yükseltildikten sonra workmanager geri eklenecek.
 }
 
 void callbackDispatcher() {
-  Workmanager().executeTask((task, inputData) async {
-    if (task != kTaskId) return Future.value(true);
+  // no-op
+}
+
+Future<void> runCheckNow() async {
     final sp = await SharedPreferences.getInstance();
     final urls = sp.getStringList('tracked_urls') ?? <String>[];
-    if (urls.isEmpty) return Future.value(true);
+    if (urls.isEmpty) return;
 
     final notifier = FlutterLocalNotificationsPlugin();
     const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
@@ -66,8 +59,7 @@ void callbackDispatcher() {
         await sp.setString(key, sig);
       } catch (_) {}
     }
-    return Future.value(true);
-  });
+    return;
 }
 
 Future<void> addTrackedUrl(String url) async {
