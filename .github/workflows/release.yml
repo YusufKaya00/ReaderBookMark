@@ -2,6 +2,7 @@ name: Build Android APK and Create GitHub Release
 
 on:
   push:
+    branches: [ main ]
     tags:
       - 'v*'
 
@@ -29,8 +30,12 @@ jobs:
       - name: Flutter Pub Get
         run: flutter pub get
 
+      - name: Determine build number
+        id: buildnum
+        run: echo "val=${GITHUB_RUN_NUMBER}" >> $GITHUB_OUTPUT
+
       - name: Build Android APK (release)
-        run: flutter build apk --release
+        run: flutter build apk --release --build-number ${{ steps.buildnum.outputs.val }}
 
       - name: Compute APK sha256
         id: sha
@@ -39,14 +44,13 @@ jobs:
           echo "apk_path=$APK" >> $GITHUB_OUTPUT
           echo "sha256=$(sha256sum $APK | awk '{print $1}')" >> $GITHUB_OUTPUT
 
-      - name: Extract version from pubspec.yaml
+      - name: Extract versionName from pubspec.yaml
         id: ver
         run: |
           VER_LINE=$(grep '^version:' pubspec.yaml | head -n1 | sed 's/version:\s*//')
           VERSION_NAME=$(echo "$VER_LINE" | cut -d'+' -f1)
-          BUILD_NUMBER=$(echo "$VER_LINE" | cut -d'+' -f2)
           echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
-          echo "build_number=$BUILD_NUMBER" >> $GITHUB_OUTPUT
+          echo "build_number=${{ steps.buildnum.outputs.val }}" >> $GITHUB_OUTPUT
 
       - name: Create latest.json
         run: |
@@ -63,10 +67,15 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
+          tag_name: v${{ steps.ver.outputs.version_name }}+${{ steps.ver.outputs.build_number }}
+          name: v${{ steps.ver.outputs.version_name }}+${{ steps.ver.outputs.build_number }}
           draft: false
           prerelease: false
+          make_latest: true
+          generate_release_notes: false
+          fail_on_unmatched_files: true
+          files_glob: false
+          replace_existing_assets: true
           files: |
             build/app/outputs/flutter-apk/app-release.apk
             latest.json
