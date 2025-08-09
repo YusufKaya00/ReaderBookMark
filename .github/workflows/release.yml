@@ -1,0 +1,76 @@
+name: Build Android APK and Create GitHub Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Flutter Pub Get
+        run: flutter pub get
+
+      - name: Build Android APK (release)
+        run: flutter build apk --release
+
+      - name: Compute APK sha256
+        id: sha
+        run: |
+          APK=build/app/outputs/flutter-apk/app-release.apk
+          echo "apk_path=$APK" >> $GITHUB_OUTPUT
+          echo "sha256=$(sha256sum $APK | awk '{print $1}')" >> $GITHUB_OUTPUT
+
+      - name: Extract version from pubspec.yaml
+        id: ver
+        run: |
+          VER_LINE=$(grep '^version:' pubspec.yaml | head -n1 | sed 's/version:\s*//')
+          VERSION_NAME=$(echo "$VER_LINE" | cut -d'+' -f1)
+          BUILD_NUMBER=$(echo "$VER_LINE" | cut -d'+' -f2)
+          echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
+          echo "build_number=$BUILD_NUMBER" >> $GITHUB_OUTPUT
+
+      - name: Create latest.json
+        run: |
+          cat > latest.json <<JSON
+          {
+            "versionName": "${{ steps.ver.outputs.version_name }}",
+            "buildNumber": ${{ steps.ver.outputs.build_number }},
+            "apkUrl": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/app-release.apk",
+            "sha256": "${{ steps.sha.outputs.sha256 }}",
+            "changelog": "Automated release for ${{ github.ref_name }}"
+          }
+          JSON
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          files: |
+            build/app/outputs/flutter-apk/app-release.apk
+            latest.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
