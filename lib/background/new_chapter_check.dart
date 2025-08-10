@@ -11,6 +11,27 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 const String kTaskId = 'check_new_chapters';
 
+// Sabit izinli site alan adları
+const List<String> kAllowedHosts = [
+  'hayalistic.com.tr',
+  'tortugaceviri.com',
+  'ruyamanga.net',
+  'asuracomic.net',
+  'tempestmangas.com',
+  'asurascans.com.tr',
+  'uzaymanga.com',
+];
+
+List<String> getAllowedHosts() => List.unmodifiable(kAllowedHosts);
+bool isAllowedUrl(String url) {
+  try {
+    final h = Uri.parse(url).host.toLowerCase();
+    return kAllowedHosts.any((a) => h == a || h.endsWith('.' + a));
+  } catch (_) {
+    return false;
+  }
+}
+
 Future<void> initBackground() async {
   await Workmanager().initialize(_workCallback, isInDebugMode: false);
   await Workmanager().registerPeriodicTask(
@@ -37,7 +58,13 @@ void _workCallback() {
 
 Future<void> _alarmEntry() async {
     final sp = await SharedPreferences.getInstance();
-    final urls = sp.getStringList('tracked_urls') ?? <String>[];
+    final manual = sp.getStringList('tracked_urls') ?? <String>[];
+    // Kütüphanedeki url'lerle eşleşen (host prefix) tekil sayfaları topla
+    final libPrefix = <String>{};
+    // Kütüphane URL’lerini almak için SharedPreferences yerine DB gerekir.
+    // Basit yaklaşım: manuel listede verilen domain prefixleri üzerinden kontrol et.
+    // (Gelişmiş: DB'den başlık/url çekilip hashlenebilir.)
+    final urls = <String>{}..addAll(manual);
     if (urls.isEmpty) return;
 
     final notifier = FlutterLocalNotificationsPlugin();
@@ -51,12 +78,31 @@ Future<void> _alarmEntry() async {
         final doc = html_parser.parse(utf8.decode(res.bodyBytes));
         // Basit sezgisel: sayfa başlığı + ilk link listesi hash’i
         final title = (doc.querySelector('title')?.text ?? '').trim();
-        final chapterTexts = doc
-            .querySelectorAll('a')
+        // Manga siteleri için 'chapter' içeren bağlantıları daha yüksek öncelikle topla
+        final anchors = doc.querySelectorAll('a');
+        final prioritized = anchors
             .map((e) => e.text.trim())
-            .where((e) => e.isNotEmpty)
-            .take(80)
-            .join('|');
+            .where((t) => t.isNotEmpty)
+            .toList();
+        prioritized.sort((a, b) {
+          final as = a.toLowerCase();
+          final bs = b.toLowerCase();
+          final aw = (as.contains('chapter') || as.contains('bölüm')) ? 0 : 1;
+          final bw = (bs.contains('chapter') || bs.contains('bölüm')) ? 0 : 1;
+          return aw.compareTo(bw);
+        });
+        // Tekillik: aynı seriye ait tekrar eden satırları azaltmaya çalış
+        final seen = <String>{};
+        final dedup = <String>[];
+        for (final t in prioritized) {
+          final norm = t.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+          if (norm.isEmpty) continue;
+          if (seen.contains(norm)) continue;
+          seen.add(norm);
+          dedup.add(norm);
+          if (dedup.length >= 120) break;
+        }
+        final chapterTexts = dedup.join('|');
         final sig = sha1.convert(utf8.encode('$title::$chapterTexts')).toString();
         final key = 'sig_$url';
         final last = sp.getString(key);
@@ -81,13 +127,14 @@ Future<void> _alarmEntry() async {
 
 Future<void> runCheckNow() => _alarmEntry();
 
-Future<void> addTrackedUrl(String url) async {
+Future<List<String>> getTrackedUrls() async {
   final sp = await SharedPreferences.getInstance();
   final urls = sp.getStringList('tracked_urls') ?? <String>[];
-  if (!urls.contains(url)) {
-    urls.add(url);
-    await sp.setStringList('tracked_urls', urls);
-  }
+  return urls;
+}
+
+Future<void> addTrackedUrl(String url) async {
+  // İstek üzerine otomatik ekleme devre dışı.
 }
 
 Future<void> removeTrackedUrl(String url) async {

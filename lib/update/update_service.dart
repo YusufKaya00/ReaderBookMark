@@ -63,7 +63,7 @@ class UpdateService {
     manifest ??= await fetchManifest();
     if (manifest == null) return;
     // APK'yi app-specific external files dizinine indir
-    final baseDir = await io.Directory('/sdcard/Android/data/com.example.deneme/files/Download').create(recursive: true);
+    final baseDir = await io.Directory('/sdcard/Android/data/com.yusuf.readerbookmark/files/Download').create(recursive: true);
     final savePath = '${baseDir.path}/readerbookmark_update.apk';
     final dio = Dio();
     await dio.download(manifest.apkUrl, savePath);
@@ -79,7 +79,7 @@ class UpdateService {
     // FileProvider URI ile kurulum ekranı aç
     // FileProvider URI: content://<authority>/...
     final file = io.File(savePath);
-    final uriString = 'content://${'${'com.example.deneme'}.fileprovider'}${file.path}';
+    final uriString = 'content://${'${'com.yusuf.readerbookmark'}.fileprovider'}${file.path}';
     try {
       final intent = AndroidIntent(
         action: 'action_view',

@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart' as wv_mobile;
 import 'package:webview_windows/webview_windows.dart' as wv_win;
+import '../../background/new_chapter_check.dart';
+import '../../utils/external_open.dart';
 
 class ReaderScreen extends StatefulWidget {
   final String title;
@@ -23,6 +25,8 @@ class _ReaderScreenState extends State<ReaderScreen> {
   double _progress = 0;
   Timer? _timer;
   late String _currentUrl;
+  bool _canGoBack = false;
+  bool _canGoForward = false;
 
   String get _scrollKey => 'scroll_${_currentUrl}';
 
@@ -43,6 +47,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
         if (u != null && u.isNotEmpty && u != _currentUrl) {
           setState(() => _currentUrl = u);
           widget.onUrlChanged?.call(u);
+          _updateNavState();
         }
       });
       c.loadingState.listen((s) async {
@@ -50,6 +55,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
           await _restoreScroll();
           await _applyDark();
           setState(() => _progress = 1);
+          _updateNavState();
         }
       });
       await c.loadUrl(widget.url);
@@ -64,11 +70,22 @@ class _ReaderScreenState extends State<ReaderScreen> {
                 setState(() => _currentUrl = u);
                 widget.onUrlChanged?.call(u);
               }
+              _updateNavState();
             },
             onProgress: (p) => setState(() => _progress = p / 100),
             onPageFinished: (_) async {
               await _restoreScroll();
               await _applyDark();
+              _updateNavState();
+            },
+            onNavigationRequest: (req) {
+              final u = req.url;
+              if (_isAdUrl(u)) {
+                return wv_mobile.NavigationDecision.prevent;
+              }
+              // Sadece izinli hostlara gidişlerde otomatik takibe ekle
+              // İstek üzerine otomatik ekleme kaldırıldı.
+              return wv_mobile.NavigationDecision.navigate;
             },
           ),
         )
@@ -76,6 +93,51 @@ class _ReaderScreenState extends State<ReaderScreen> {
       _mobile = c;
     }
     _timer = Timer.periodic(const Duration(seconds: 1), (_) => _saveScroll());
+  }
+
+  bool _isAdUrl(String url) {
+    final u = url.toLowerCase();
+    const adPatterns = [
+      'doubleclick.net',
+      'googlesyndication.com',
+      'adservice.google',
+      'taboola',
+      'outbrain',
+      'zedo',
+      'onclick',
+      'popad',
+      'propeller',
+      'intent://',
+      'facebook.com/tr',
+      'utm_source=push',
+    ];
+    for (final p in adPatterns) {
+      if (u.contains(p)) return true;
+    }
+    return false;
+  }
+
+  Future<void> _updateNavState() async {
+    if (_isWindows) {
+      try {
+        final r = await _win?.executeScript('history.length');
+        int len = 0;
+        if (r is String) len = int.tryParse(r) ?? 0;
+        setState(() {
+          _canGoBack = len > 1;
+          _canGoForward = false; // ileri tespiti güvenilir değil
+        });
+      } catch (_) {}
+    } else {
+      try {
+        final canBack = await _mobile?.canGoBack() ?? false;
+        final canFwd = await _mobile?.canGoForward() ?? false;
+        setState(() {
+          _canGoBack = canBack;
+          _canGoForward = canFwd;
+        });
+      } catch (_) {}
+    }
   }
 
   Future<void> _applyDark() async {
@@ -87,7 +149,7 @@ class _ReaderScreenState extends State<ReaderScreen> {
     cssBuffer.writeln('img,video{filter:brightness(.85) contrast(1.05)}');
     cssBuffer.writeln('a{color:#8ab4f8!important}');
     if (adOn) {
-      cssBuffer.writeln('[id*="ad"], [class*="ad"], .ads, .ad, .advert, .banner, .sponsor, .sponsored {display:none!important}');
+      cssBuffer.writeln('[id*="ad"], [class*="ad"], .ads, .ad, .advert, .banner, .sponsor, .sponsored, iframe[src*="ad"], iframe[src*="doubleclick"], div[id^="google_ads"], .cookie, .gdpr, .notification, .push-notification {display:none!important}');
     }
     final css = cssBuffer.toString().replaceAll("'", "\'");
     final js = """
@@ -150,22 +212,24 @@ document.head.appendChild(style);
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.title),
-        actions: [
-          IconButton(
-            onPressed: () async {
-              if (_isWindows) {
-                await _win?.reload();
-              } else {
-                await _mobile?.reload();
+      appBar: AppBar(title: Text(widget.title)),
+      body: WillPopScope(
+        onWillPop: () async {
+          try {
+            if (_isWindows) {
+              // Windows WebView goBack
+              await _win?.goBack();
+              return false;
+            } else {
+              if (await _mobile?.canGoBack() == true) {
+                await _mobile?.goBack();
+                return false;
               }
-            },
-            icon: const Icon(Icons.refresh),
-          )
-        ],
-      ),
-      body: Column(
+            }
+          } catch (_) {}
+          return true;
+        },
+        child: Column(
         children: [
           if (_progress < 1) LinearProgressIndicator(value: _progress, minHeight: 2),
           Expanded(
@@ -180,6 +244,70 @@ document.head.appendChild(style);
                 : wv_mobile.WebViewWidget(controller: _mobile!),
           )
         ],
+      ),
+      ),
+      bottomNavigationBar: BottomAppBar(
+        height: 64,
+        child: Row(
+          children: [
+            const SizedBox(width: 8),
+            IconButton(
+              tooltip: 'Geri',
+              onPressed: _canGoBack
+                  ? () async {
+                      try {
+                        if (_isWindows) {
+                          await _win?.goBack();
+                        } else {
+                          await _mobile?.goBack();
+                        }
+                      } catch (_) {}
+                      _updateNavState();
+                    }
+                  : null,
+              icon: const Icon(Icons.arrow_back),
+            ),
+            IconButton(
+              tooltip: 'İleri',
+              onPressed: _canGoForward
+                  ? () async {
+                      try {
+                        if (_isWindows) {
+                          await _win?.goForward();
+                        } else {
+                          await _mobile?.goForward();
+                        }
+                      } catch (_) {}
+                      _updateNavState();
+                    }
+                  : null,
+              icon: const Icon(Icons.arrow_forward),
+            ),
+            const Spacer(),
+            IconButton(
+              tooltip: 'Yenile',
+              onPressed: () async {
+                if (_isWindows) {
+                  await _win?.reload();
+                } else {
+                  await _mobile?.reload();
+                }
+              },
+              icon: const Icon(Icons.refresh),
+            ),
+            IconButton(
+              tooltip: 'Tarayıcıda aç',
+              onPressed: () async {
+                // Dış tarayıcıya aç (Brave/Safari)
+                try {
+                  await openInExternalBrowser(_currentUrl);
+                } catch (_) {}
+              },
+              icon: const Icon(Icons.open_in_new),
+            ),
+            const SizedBox(width: 8),
+          ],
+        ),
       ),
     );
   }

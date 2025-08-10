@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AddLinkDialog extends StatefulWidget {
   final void Function({required String title, required String url, required String category, String? cover}) onSubmit;
@@ -14,6 +16,7 @@ class _AddLinkDialogState extends State<AddLinkDialog> {
   final _urlController = TextEditingController();
   final _coverController = TextEditingController();
   String _category = 'Genel';
+  String? _clipboardUrl;
 
   @override
   void dispose() {
@@ -21,6 +24,30 @@ class _AddLinkDialogState extends State<AddLinkDialog> {
     _urlController.dispose();
     _coverController.dispose();
     super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _readClipboard();
+  }
+
+  Future<void> _readClipboard() async {
+    try {
+      final data = await Clipboard.getData(Clipboard.kTextPlain);
+      final t = data?.text?.trim();
+      if (t != null && t.isNotEmpty) {
+        final uri = Uri.tryParse(t);
+        if (uri != null && uri.hasScheme && uri.host.isNotEmpty) {
+          setState(() {
+            _clipboardUrl = t;
+            if (_urlController.text.trim().isEmpty) {
+              _urlController.text = t;
+            }
+          });
+        }
+      }
+    } catch (_) {}
   }
 
   @override
@@ -41,7 +68,20 @@ class _AddLinkDialogState extends State<AddLinkDialog> {
               const SizedBox(height: 8),
               TextFormField(
                 controller: _urlController,
-                decoration: const InputDecoration(labelText: 'URL'),
+                decoration: InputDecoration(
+                  labelText: 'URL',
+                  suffixIcon: (_clipboardUrl != null)
+                      ? IconButton(
+                          tooltip: 'Panodaki linki yapıştır',
+                          icon: const Icon(Icons.paste),
+                          onPressed: () {
+                            setState(() {
+                              _urlController.text = _clipboardUrl!;
+                            });
+                          },
+                        )
+                      : null,
+                ),
                 keyboardType: TextInputType.url,
                 validator: (v) {
                   if (v == null || v.trim().isEmpty) return 'URL gerekli';
@@ -86,6 +126,10 @@ class _AddLinkDialogState extends State<AddLinkDialog> {
                 category: _category,
                 cover: _coverController.text.trim().isEmpty ? null : _coverController.text.trim(),
               );
+              // tracked_urls listesine otomatik eklemek için SharedPreferences'a yaz
+              // Bu sayede yeni bölüm kontrolü bu URL'leri de izler
+              // Hata olursa sessiz geçilir
+              // Otomatik takip ekleme kaldırıldı (istek üzerine).
               Navigator.of(context).pop();
             }
           },

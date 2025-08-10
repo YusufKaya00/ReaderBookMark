@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 class EditLinkDialog extends StatefulWidget {
   final String initialTitle;
@@ -26,6 +27,7 @@ class _EditLinkDialogState extends State<EditLinkDialog> {
   late final TextEditingController _urlController;
   late final TextEditingController _coverController;
   late String _category;
+  String? _clipboardUrl;
 
   @override
   void initState() {
@@ -34,6 +36,22 @@ class _EditLinkDialogState extends State<EditLinkDialog> {
     _urlController = TextEditingController(text: widget.initialUrl);
     _coverController = TextEditingController(text: widget.initialCover ?? '');
     _category = widget.initialCategory;
+    _readClipboard();
+  }
+
+  Future<void> _readClipboard() async {
+    try {
+      final data = await Clipboard.getData(Clipboard.kTextPlain);
+      final t = data?.text?.trim();
+      if (t != null && t.isNotEmpty) {
+        final uri = Uri.tryParse(t);
+        if (uri != null && uri.hasScheme && uri.host.isNotEmpty) {
+          if (t != _urlController.text.trim()) {
+            setState(() => _clipboardUrl = t);
+          }
+        }
+      }
+    } catch (_) {}
   }
 
   @override
@@ -62,7 +80,20 @@ class _EditLinkDialogState extends State<EditLinkDialog> {
               const SizedBox(height: 8),
               TextFormField(
                 controller: _urlController,
-                decoration: const InputDecoration(labelText: 'URL'),
+                decoration: InputDecoration(
+                  labelText: 'URL',
+                  suffixIcon: (_clipboardUrl != null)
+                      ? IconButton(
+                          tooltip: 'Panodaki linki yapıştır',
+                          icon: const Icon(Icons.paste),
+                          onPressed: () {
+                            setState(() {
+                              _urlController.text = _clipboardUrl!;
+                            });
+                          },
+                        )
+                      : null,
+                ),
                 keyboardType: TextInputType.url,
                 validator: (v) {
                   if (v == null || v.trim().isEmpty) return 'URL gerekli';

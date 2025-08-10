@@ -13,6 +13,7 @@ import '../../utils/external_open.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../update/update_service.dart';
 import 'about_screen.dart';
+import 'sites_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -25,6 +26,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final _searchController = TextEditingController();
   final Set<int> _selectedIds = <int>{};
   bool get _selectionMode => _selectedIds.isNotEmpty;
+  final List<Map<String, dynamic>> _undoStack = [];
 
   @override
   void initState() {
@@ -52,6 +54,12 @@ class _HomeScreenState extends State<HomeScreen> {
               onPressed: () async {
                 final newCat = await _pickCategory(context);
                 if (newCat != null) {
+                  // undo push
+                  final before = library.items
+                      .where((e) => e.id != null && _selectedIds.contains(e.id))
+                      .map((e) => e.copyWith())
+                      .toList();
+                  _undoStack.add({'type': 'bulk_category', 'before': before});
                   await context.read<LibraryProvider>().updateCategoryMany(_selectedIds.toList(), newCat);
                   setState(() => _selectedIds.clear());
                 }
@@ -61,27 +69,11 @@ class _HomeScreenState extends State<HomeScreen> {
             IconButton(
               tooltip: 'Seçilileri sil',
               onPressed: () async {
-                await context.read<LibraryProvider>().removeMany(_selectedIds.toList());
-                setState(() => _selectedIds.clear());
-              },
-              icon: const Icon(Icons.delete_forever),
-            ),
-          ],
-          if (_selectionMode) ...[
-            IconButton(
-              tooltip: 'Kategoriyi değiştir',
-              onPressed: () async {
-                final newCat = await _pickCategory(context);
-                if (newCat != null) {
-                  await context.read<LibraryProvider>().updateCategoryMany(_selectedIds.toList(), newCat);
-                  setState(() => _selectedIds.clear());
-                }
-              },
-              icon: const Icon(Icons.label_outline),
-            ),
-            IconButton(
-              tooltip: 'Seçilileri sil',
-              onPressed: () async {
+                final before = library.items
+                    .where((e) => e.id != null && _selectedIds.contains(e.id))
+                    .map((e) => e.copyWith())
+                    .toList();
+                _undoStack.add({'type': 'bulk_delete', 'before': before});
                 await context.read<LibraryProvider>().removeMany(_selectedIds.toList());
                 setState(() => _selectedIds.clear());
               },
@@ -94,18 +86,6 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ],
           if (!_selectionMode) ...[
-            IconButton(
-              tooltip: 'Tümünü seç',
-              onPressed: () {
-                final items = context.read<LibraryProvider>().items;
-                setState(() {
-                  _selectedIds
-                    ..clear()
-                    ..addAll(items.where((e) => e.id != null).map((e) => e.id!));
-                });
-              },
-              icon: const Icon(Icons.select_all),
-            ),
             PopupMenuButton<String>(
               onSelected: (v) async {
                 final prov = context.read<LibraryProvider>();
@@ -163,6 +143,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   if (mounted) {
                     Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AboutScreen()));
                   }
+                } else if (v == 'sites') {
+                  if (mounted) {
+                    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SitesScreen()));
+                  }
                 }
               },
               itemBuilder: (c) => const [
@@ -170,24 +154,95 @@ class _HomeScreenState extends State<HomeScreen> {
                 PopupMenuItem(value: 'check_update', child: Text('Güncellemeyi kontrol et')),
                 PopupMenuItem(value: 'export', child: Text('Dışa aktar (paylaş)')),
                 PopupMenuItem(value: 'about', child: Text('Yapımcı')),
+                PopupMenuItem(value: 'sites', child: Text('Siteleri Yönet')),
               ],
             ),
           ],
+          // Üst barda reklam engelle ve gece modu taşındı (alt bara)
+          // Seçim tümü alt barda gösteriliyor
           IconButton(
-            tooltip: 'Reklam engelle (CSS)',
-            onPressed: () => context.read<SettingsProvider>().toggleAdBlockCss(),
-            icon: Icon(settings.adBlockCssEnabled ? Icons.shield_moon : Icons.shield_outlined),
-          ),
-          IconButton(
-            tooltip: 'Gece Modu',
-            onPressed: () => context.read<SettingsProvider>().toggleDarkMode(),
-            icon: Icon(settings.isDarkMode ? Icons.dark_mode : Icons.light_mode),
+            tooltip: 'Geri al',
+            onPressed: _undoStack.isEmpty
+                ? null
+                : () async {
+                    final last = _undoStack.removeLast();
+                    final type = last['type'] as String;
+                    final before = (last['before'] as List).cast<dynamic>();
+                    if (type == 'bulk_delete') {
+                      // silinenleri geri ekle
+                      for (final m in before) {
+                        // m bir LinkItem
+                        await context.read<LibraryProvider>().add(m);
+                      }
+                    } else if (type == 'bulk_category') {
+                      // önceki kategorilere geri dön
+                      for (final m in before) {
+                        await context.read<LibraryProvider>().update(m);
+                      }
+                    } else if (type == 'single_update') {
+                      await context.read<LibraryProvider>().update(before.first);
+                    } else if (type == 'single_delete') {
+                      await context.read<LibraryProvider>().add(before.first);
+                    }
+                  },
+            icon: const Icon(Icons.undo),
           ),
         ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: _showAdd,
         child: const Icon(Icons.add),
+      ),
+      bottomNavigationBar: BottomAppBar(
+        height: 60,
+        child: Row(
+          children: [
+            const SizedBox(width: 8),
+            IconButton(
+              tooltip: 'Siteleri Yönet',
+              icon: const Icon(Icons.public),
+              onPressed: () {
+                Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SitesScreen()));
+              },
+            ),
+            IconButton(
+              tooltip: settings.adBlockCssEnabled ? 'Reklam engelle: Açık' : 'Reklam engelle: Kapalı',
+              icon: Icon(settings.adBlockCssEnabled ? Icons.shield_moon : Icons.shield_outlined),
+              onPressed: () => context.read<SettingsProvider>().toggleAdBlockCss(),
+            ),
+            IconButton(
+              tooltip: settings.isDarkMode ? 'Aydınlık mod' : 'Karanlık mod',
+              icon: Icon(settings.isDarkMode ? Icons.dark_mode : Icons.light_mode),
+              onPressed: () => context.read<SettingsProvider>().toggleDarkMode(),
+            ),
+            const Spacer(),
+            IconButton(
+              tooltip: 'Yeni bölümleri kontrol et',
+              icon: const Icon(Icons.notifications_active_outlined),
+              onPressed: () async {
+                showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
+                await runCheckNow();
+                if (!mounted) return;
+                Navigator.of(context).pop();
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Yeni bölüm kontrolü tamamlandı.')));
+              },
+            ),
+            if (_selectionMode)
+              IconButton(
+                tooltip: 'Tümünü seç',
+                onPressed: () {
+                  final items = context.read<LibraryProvider>().items;
+                  setState(() {
+                    _selectedIds
+                      ..clear()
+                      ..addAll(items.where((e) => e.id != null).map((e) => e.id!));
+                  });
+                },
+                icon: const Icon(Icons.select_all),
+              ),
+            const SizedBox(width: 8),
+          ],
+        ),
       ),
       body: Container(
         decoration: const BoxDecoration(
@@ -201,132 +256,136 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _searchController,
-                    decoration: InputDecoration(
-                      hintText: 'Ara...',
-                      prefixIcon: const Icon(Icons.search),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _searchController,
+                      decoration: InputDecoration(
+                        hintText: 'Ara...',
+                        prefixIcon: const Icon(Icons.search),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        isDense: true,
                       ),
-                      isDense: true,
+                      onChanged: (v) => context.read<LibraryProvider>().setQuery(v),
                     ),
-                    onChanged: (v) => context.read<LibraryProvider>().setQuery(v),
                   ),
-                ),
-                const SizedBox(width: 8),
-                DropdownButton<String>(
-                  value: library.category,
-                  items: const [
-                    DropdownMenuItem(value: 'Tümü', child: Text('Tümü')),
-                    DropdownMenuItem(value: 'Genel', child: Text('Genel')),
-                    DropdownMenuItem(value: 'Manga', child: Text('Manga')),
-                    DropdownMenuItem(value: 'Kitap', child: Text('Kitap')),
-                    DropdownMenuItem(value: 'Makale', child: Text('Makale')),
-                  ],
-                  onChanged: (v) => context.read<LibraryProvider>().setCategory(v ?? 'Tümü'),
-                ),
-              ],
+                  const SizedBox(width: 8),
+                  DropdownButton<String>(
+                    value: library.category,
+                    items: const [
+                      DropdownMenuItem(value: 'Tümü', child: Text('Tümü')),
+                      DropdownMenuItem(value: 'Genel', child: Text('Genel')),
+                      DropdownMenuItem(value: 'Manga', child: Text('Manga')),
+                      DropdownMenuItem(value: 'Kitap', child: Text('Kitap')),
+                      DropdownMenuItem(value: 'Makale', child: Text('Makale')),
+                    ],
+                    onChanged: (v) => context.read<LibraryProvider>().setCategory(v ?? 'Tümü'),
+                  ),
+                ],
+              ),
             ),
-          ),
             Expanded(
               child: FutureBuilder(
-              future: library.items.isEmpty ? context.read<LibraryProvider>().load() : null,
-              builder: (context, snapshot) {
-                if (library.items.isEmpty) {
-                  return const Center(child: Text('Henüz link yok. + ile ekleyin.'));
-                }
-                return GridView.builder(
-                  padding: const EdgeInsets.all(12),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                    childAspectRatio: 0.8,
-                  ),
-                  itemCount: library.items.length,
-                  itemBuilder: (context, index) {
-                    final item = library.items[index];
-                    final selected = item.id != null && _selectedIds.contains(item.id);
-                    return GestureDetector(
-                      onLongPress: () {
-                        if (item.id == null) return;
-                        setState(() {
-                          if (_selectedIds.contains(item.id)) {
-                            _selectedIds.remove(item.id);
-                          } else {
-                            _selectedIds.add(item.id!);
-                          }
-                        });
-                      },
-                      onDoubleTap: () {
-                        Share.share(item.url, subject: item.title);
-                      },
-                      child: Stack(
-                        children: [
-                          _LibraryCard(item: item, index: index),
-                          if (selected)
+                future: library.items.isEmpty ? context.read<LibraryProvider>().load() : null,
+                builder: (context, snapshot) {
+                  if (library.items.isEmpty) {
+                    return const Center(child: Text('Henüz link yok. + ile ekleyin.'));
+                  }
+                  return GridView.builder(
+                    padding: const EdgeInsets.all(12),
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 12,
+                      mainAxisSpacing: 12,
+                      childAspectRatio: 0.8,
+                    ),
+                    itemCount: library.items.length,
+                    itemBuilder: (context, index) {
+                      final item = library.items[index];
+                      final selected = item.id != null && _selectedIds.contains(item.id);
+                      return GestureDetector(
+                        onLongPress: () {
+                          if (item.id == null) return;
+                          setState(() {
+                            if (_selectedIds.contains(item.id)) {
+                              _selectedIds.remove(item.id);
+                            } else {
+                              _selectedIds.add(item.id!);
+                            }
+                          });
+                        },
+                        onDoubleTap: () {
+                          Share.share(item.url, subject: item.title);
+                        },
+                        child: Stack(
+                          children: [
+                            _LibraryCard(item: item, index: index),
+                            if (selected)
+                              Positioned(
+                                top: 8,
+                                right: 8,
+                                child: CircleAvatar(
+                                  backgroundColor: Theme.of(context).colorScheme.primary,
+                                  radius: 14,
+                                  child: const Icon(Icons.check, size: 16, color: Colors.white),
+                                ),
+                              ),
                             Positioned(
-                              top: 8,
-                              right: 8,
-                              child: CircleAvatar(
-                                backgroundColor: Theme.of(context).colorScheme.primary,
-                                radius: 14,
-                                child: const Icon(Icons.check, size: 16, color: Colors.white),
+                              top: 6,
+                              left: 6,
+                              child: PopupMenuButton<String>(
+                                icon: const Icon(Icons.more_vert, size: 18),
+                                onSelected: (v) async {
+                                  final prov = context.read<LibraryProvider>();
+                                  if (v == 'share') {
+                                    Share.share(item.url, subject: item.title);
+                                  } else if (v == 'open_brave') {
+                                    await openInExternalBrowser(item.url);
+                                  } else if (v == 'edit') {
+                                    // Undo için önceki halini sakla
+                                    _undoStack.add({'type': 'single_update', 'before': [item.copyWith()]});
+                                    showDialog(
+                                      context: context,
+                                      builder: (_) => EditLinkDialog(
+                                        initialTitle: item.title,
+                                        initialUrl: item.url,
+                                        initialCategory: item.category,
+                                        initialCover: item.coverPath,
+                                        onSubmit: ({required String title, required String url, required String category, String? cover}) async {
+                                          await prov.update(
+                                            item.copyWith(
+                                              title: title.isEmpty ? url : title,
+                                              url: url,
+                                              category: category,
+                                              coverPath: cover,
+                                            ),
+                                        );
+                                        },
+                                      ),
+                                    );
+                                  } else if (v == 'delete') {
+                                  _undoStack.add({'type': 'single_delete', 'before': [item.copyWith()]});
+                                  if (item.id != null) await prov.remove(item.id!);
+                                  }
+                                },
+                                itemBuilder: (ctx) => const [
+                                  PopupMenuItem(value: 'share', child: Text('Paylaş')),
+                                  PopupMenuItem(value: 'open_brave', child: Text('Brave\'de aç')),
+                                  PopupMenuItem(value: 'edit', child: Text('Düzenle')),
+                                  PopupMenuItem(value: 'delete', child: Text('Sil')),
+                                ],
                               ),
                             ),
-                          Positioned(
-                            top: 6,
-                            left: 6,
-                            child: PopupMenuButton<String>(
-                              icon: const Icon(Icons.more_vert, size: 18),
-                              onSelected: (v) async {
-                                final prov = context.read<LibraryProvider>();
-                                if (v == 'share') {
-                                  Share.share(item.url, subject: item.title);
-                                } else if (v == 'open_brave') {
-                                  await openInExternalBrowser(item.url);
-                                } else if (v == 'edit') {
-                                  showDialog(
-                                    context: context,
-                                    builder: (_) => EditLinkDialog(
-                                      initialTitle: item.title,
-                                      initialUrl: item.url,
-                                      initialCategory: item.category,
-                                      initialCover: item.coverPath,
-                                      onSubmit: ({required String title, required String url, required String category, String? cover}) async {
-                                        await prov.update(
-                                          item.copyWith(
-                                            title: title.isEmpty ? url : title,
-                                            url: url,
-                                            category: category,
-                                            coverPath: cover,
-                                          ),
-                                        );
-                                      },
-                                    ),
-                                  );
-                                } else if (v == 'delete') {
-                                  if (item.id != null) await prov.remove(item.id!);
-                                }
-                              },
-                              itemBuilder: (ctx) => const [
-                                PopupMenuItem(value: 'share', child: Text('Paylaş')),
-                                PopupMenuItem(value: 'open_brave', child: Text('Brave’de aç')),
-                                PopupMenuItem(value: 'edit', child: Text('Düzenle')),
-                                PopupMenuItem(value: 'delete', child: Text('Sil')),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  },
-                );
-              },
+                          ],
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
             ),
           ],
         ),
@@ -406,7 +465,6 @@ class _LibraryCard extends StatelessWidget {
                 final prov = context.read<LibraryProvider>();
                 if (item.id == null) return;
                 await prov.update(item.copyWith(url: newUrl));
-                await addTrackedUrl(newUrl);
               },
             ),
           ),
@@ -482,19 +540,11 @@ class _LibraryCard extends StatelessWidget {
                         icon: const Icon(Icons.edit_outlined),
                       ),
                       IconButton(
-                        tooltip: 'Brave’de aç',
+                        tooltip: 'Brave\'de aç',
                         onPressed: () => openInExternalBrowser(item.url),
                         icon: const Icon(Icons.open_in_new),
                       ),
-                      IconButton(
-                        tooltip: 'Sil',
-                        onPressed: () async {
-                          if (item.id != null) {
-                            await context.read<LibraryProvider>().remove(item.id!);
-                          }
-                        },
-                        icon: const Icon(Icons.delete_outline),
-                      ),
+                      // Kart üzerinden silme kaldırıldı (Geri al uyumu için üst menüde kullanın)
                     ],
                   )
                 ],
