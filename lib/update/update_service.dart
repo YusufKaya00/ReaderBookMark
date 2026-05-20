@@ -9,6 +9,8 @@ import 'package:open_filex/open_filex.dart';
 import 'package:android_intent_plus/android_intent.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+import 'package:path_provider/path_provider.dart';
+
 class UpdateManifest {
   final String versionName;
   final int buildNumber;
@@ -34,7 +36,6 @@ class UpdateManifest {
 }
 
 class UpdateService {
-  // YusufKaya00/ReaderBookMark releases/latest manifest
   static const String manifestUrl =
       'https://github.com/YusufKaya00/ReaderBookMark/releases/latest/download/latest.json';
 
@@ -62,35 +63,37 @@ class UpdateService {
     if (!Platform.isAndroid) return;
     manifest ??= await fetchManifest();
     if (manifest == null) return;
-    // APK'yi app-specific external files dizinine indir
-    final baseDir = await io.Directory('/sdcard/Android/data/com.yusuf.readerbookmark/files/Download').create(recursive: true);
-    final savePath = '${baseDir.path}/readerbookmark_update.apk';
-    final dio = Dio();
-    await dio.download(manifest.apkUrl, savePath);
-    if (manifest.sha256 != null) {
-      final f = io.File(savePath);
-      final bytes = await f.readAsBytes();
-      final sum = sha256OfBytes(bytes);
-      if (sum.toLowerCase() != manifest.sha256!.toLowerCase()) {
-        await f.delete().catchError((_) => f);
-        return;
-      }
-    }
-    // FileProvider URI ile kurulum ekranı aç
-    // FileProvider URI: content://<authority>/...
-    final file = io.File(savePath);
-    final uriString = 'content://${'${'com.yusuf.readerbookmark'}.fileprovider'}${file.path}';
+    
     try {
-      final intent = AndroidIntent(
-        action: 'action_view',
-        data: uriString,
-        type: 'application/vnd.android.package-archive',
-        flags: <int>[268435456, 1, 2],
-      );
-      await intent.launch();
-    } catch (_) {
-      await OpenFilex.open(savePath);
-    }
+      final tempDir = await getTemporaryDirectory();
+      final savePath = '${tempDir.path}/readerbookmark_update.apk';
+      final dio = Dio();
+      await dio.download(manifest.apkUrl, savePath);
+      
+      if (manifest.sha256 != null) {
+        final f = io.File(savePath);
+        final bytes = await f.readAsBytes();
+        final sum = sha256OfBytes(bytes);
+        if (sum.toLowerCase() != manifest.sha256!.toLowerCase()) {
+          await f.delete().catchError((_) => f);
+          return;
+        }
+      }
+      
+      final openResult = await OpenFilex.open(savePath);
+      if (openResult.type != ResultType.done) {
+        final info = await PackageInfo.fromPlatform();
+        final authority = '${info.packageName}.fileprovider';
+        final uriString = 'content://$authority$savePath';
+        final intent = AndroidIntent(
+          action: 'action_view',
+          data: uriString,
+          type: 'application/vnd.android.package-archive',
+          flags: <int>[268435456, 1, 2],
+        );
+        await intent.launch();
+      }
+    } catch (_) {}
   }
 
   static String sha256OfBytes(List<int> bytes) => sha256.convert(bytes).toString();

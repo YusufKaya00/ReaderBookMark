@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../models/link_item.dart';
 import '../../providers/library_provider.dart';
@@ -10,10 +12,11 @@ import '../widgets/add_link_dialog.dart';
 import '../widgets/edit_link_dialog.dart';
 import 'reader_screen.dart';
 import '../../utils/external_open.dart';
-import 'package:share_plus/share_plus.dart';
 import '../../update/update_service.dart';
 import 'about_screen.dart';
 import 'sites_screen.dart';
+import 'settings_screen.dart';
+import '../../utils/translations.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -27,233 +30,55 @@ class _HomeScreenState extends State<HomeScreen> {
   final Set<int> _selectedIds = <int>{};
   bool get _selectionMode => _selectedIds.isNotEmpty;
   final List<Map<String, dynamic>> _undoStack = [];
+  bool _loaded = false;
+  bool _showFilters = false; // Filter visibility toggle
 
   @override
   void initState() {
     super.initState();
-    Future.microtask(() async {
-      await context.read<SettingsProvider>().load();
-      await context.read<LibraryProvider>().load();
-    });
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    final settings = context.read<SettingsProvider>();
+    final library = context.read<LibraryProvider>();
+    await settings.load();
+    await library.load();
+    if (mounted) setState(() => _loaded = true);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final settings = context.watch<SettingsProvider>();
     final library = context.watch<LibraryProvider>();
+    final theme = Theme.of(context);
 
     return Scaffold(
-      appBar: AppBar(
-        title: _selectionMode
-            ? Text('${_selectedIds.length} seçildi')
-            : const Text('Kitaplık'),
-        actions: [
-          if (_selectionMode) ...[
-            IconButton(
-              tooltip: 'Kategoriyi değiştir',
-              onPressed: () async {
-                final newCat = await _pickCategory(context);
-                if (newCat != null) {
-                  // undo push
-                  final before = library.items
-                      .where((e) => e.id != null && _selectedIds.contains(e.id))
-                      .map((e) => e.copyWith())
-                      .toList();
-                  _undoStack.add({'type': 'bulk_category', 'before': before});
-                  await context.read<LibraryProvider>().updateCategoryMany(_selectedIds.toList(), newCat);
-                  setState(() => _selectedIds.clear());
-                }
-              },
-              icon: const Icon(Icons.label_outline),
-            ),
-            IconButton(
-              tooltip: 'Seçilileri sil',
-              onPressed: () async {
-                final before = library.items
-                    .where((e) => e.id != null && _selectedIds.contains(e.id))
-                    .map((e) => e.copyWith())
-                    .toList();
-                _undoStack.add({'type': 'bulk_delete', 'before': before});
-                await context.read<LibraryProvider>().removeMany(_selectedIds.toList());
-                setState(() => _selectedIds.clear());
-              },
-              icon: const Icon(Icons.delete_forever),
-            ),
-            IconButton(
-              tooltip: 'Seçimi temizle',
-              onPressed: () => setState(() => _selectedIds.clear()),
-              icon: const Icon(Icons.clear),
-            ),
-          ],
-          if (!_selectionMode) ...[
-            PopupMenuButton<String>(
-              onSelected: (v) async {
-                final prov = context.read<LibraryProvider>();
-                if (v == 'export') {
-                  final data = prov.items.map((e) => e.toMap()).toList();
-                  final jsonStr = data.toString();
-                  await Share.share(jsonStr, subject: 'Kitaplık Dışa Aktarım');
-                } else if (v == 'check_chapters') {
-                  showDialog(
-                    context: context,
-                    barrierDismissible: false,
-                    builder: (_) => const Center(child: CircularProgressIndicator()),
-                  );
-                  await runCheckNow();
-                  if (!mounted) return;
-                  Navigator.of(context).pop();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Yeni bölüm kontrolü tamamlandı.')),
-                  );
-                } else if (v == 'check_update') {
-                  // Güncelleme kontrolü
-                  showDialog(
-                    context: context,
-                    barrierDismissible: false,
-                    builder: (_) => const Center(child: CircularProgressIndicator()),
-                  );
-                  final available = await UpdateService.isUpdateAvailable();
-                  if (!mounted) return;
-                  Navigator.of(context).pop(); // progress kapat
-                  if (available) {
-                    // Onay diyalogu
-                    showDialog(
-                      context: context,
-                      builder: (_) => AlertDialog(
-                        title: const Text('Güncelleme mevcut'),
-                        content: const Text('Yeni sürümü indirmek ve kurmak ister misiniz?'),
-                        actions: [
-                          TextButton(onPressed: () => Navigator.pop(context), child: const Text('İptal')),
-                          ElevatedButton(
-                            onPressed: () async {
-                              Navigator.pop(context);
-                              await UpdateService.startUpdate();
-                            },
-                            child: const Text('Güncelle'),
-                          ),
-                        ],
-                      ),
-                    );
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Uygulama güncel.')),
-                    );
-                  }
-                } else if (v == 'about') {
-                  if (mounted) {
-                    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AboutScreen()));
-                  }
-                } else if (v == 'sites') {
-                  if (mounted) {
-                    Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SitesScreen()));
-                  }
-                }
-              },
-              itemBuilder: (c) => const [
-                PopupMenuItem(value: 'check_chapters', child: Text('Yeni bölümleri kontrol et')),
-                PopupMenuItem(value: 'check_update', child: Text('Güncellemeyi kontrol et')),
-                PopupMenuItem(value: 'export', child: Text('Dışa aktar (paylaş)')),
-                PopupMenuItem(value: 'about', child: Text('Yapımcı')),
-                PopupMenuItem(value: 'sites', child: Text('Siteleri Yönet')),
-              ],
-            ),
-          ],
-          // Üst barda reklam engelle ve gece modu taşındı (alt bara)
-          // Seçim tümü alt barda gösteriliyor
-          IconButton(
-            tooltip: 'Geri al',
-            onPressed: _undoStack.isEmpty
-                ? null
-                : () async {
-                    final last = _undoStack.removeLast();
-                    final type = last['type'] as String;
-                    final before = (last['before'] as List).cast<dynamic>();
-                    if (type == 'bulk_delete') {
-                      // silinenleri geri ekle
-                      for (final m in before) {
-                        // m bir LinkItem
-                        await context.read<LibraryProvider>().add(m);
-                      }
-                    } else if (type == 'bulk_category') {
-                      // önceki kategorilere geri dön
-                      for (final m in before) {
-                        await context.read<LibraryProvider>().update(m);
-                      }
-                    } else if (type == 'single_update') {
-                      await context.read<LibraryProvider>().update(before.first);
-                    } else if (type == 'single_delete') {
-                      await context.read<LibraryProvider>().add(before.first);
-                    }
-                  },
-            icon: const Icon(Icons.undo),
-          ),
-        ],
-      ),
-      floatingActionButton: FloatingActionButton(
+      appBar: _buildAppBar(context, settings, library, theme),
+      floatingActionButton: FloatingActionButton.extended(
         onPressed: _showAdd,
-        child: const Icon(Icons.add),
-      ),
-      bottomNavigationBar: BottomAppBar(
-        height: 60,
-        child: Row(
-          children: [
-            const SizedBox(width: 8),
-            IconButton(
-              tooltip: 'Siteleri Yönet',
-              icon: const Icon(Icons.public),
-              onPressed: () {
-                Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SitesScreen()));
-              },
-            ),
-            IconButton(
-              tooltip: settings.adBlockCssEnabled ? 'Reklam engelle: Açık' : 'Reklam engelle: Kapalı',
-              icon: Icon(settings.adBlockCssEnabled ? Icons.shield_moon : Icons.shield_outlined),
-              onPressed: () => context.read<SettingsProvider>().toggleAdBlockCss(),
-            ),
-            IconButton(
-              tooltip: settings.isDarkMode ? 'Aydınlık mod' : 'Karanlık mod',
-              icon: Icon(settings.isDarkMode ? Icons.dark_mode : Icons.light_mode),
-              onPressed: () => context.read<SettingsProvider>().toggleDarkMode(),
-            ),
-            const Spacer(),
-            IconButton(
-              tooltip: 'Yeni bölümleri kontrol et',
-              icon: const Icon(Icons.notifications_active_outlined),
-              onPressed: () async {
-                showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
-                await runCheckNow();
-                if (!mounted) return;
-                Navigator.of(context).pop();
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Yeni bölüm kontrolü tamamlandı.')));
-              },
-            ),
-            if (_selectionMode)
-              IconButton(
-                tooltip: 'Tümünü seç',
-                onPressed: () {
-                  final items = context.read<LibraryProvider>().items;
-                  setState(() {
-                    _selectedIds
-                      ..clear()
-                      ..addAll(items.where((e) => e.id != null).map((e) => e.id!));
-                  });
-                },
-                icon: const Icon(Icons.select_all),
-              ),
-            const SizedBox(width: 8),
-          ],
-        ),
+        icon: const Icon(Icons.add),
+        label: Text(context.tr('add')),
       ),
       body: Container(
-        decoration: const BoxDecoration(
-          image: DecorationImage(
-            image: AssetImage('wp.jpg'),
-            fit: BoxFit.cover,
-            opacity: 0.15,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: settings.isDarkMode
+                ? [const Color(0xFF0C0C0C), Colors.blueGrey.shade900]
+                : [Colors.blue.shade50, Colors.teal.shade50],
           ),
         ),
         child: Column(
           children: [
+            // Search bar with filter button
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
               child: Row(
@@ -262,10 +87,13 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: TextField(
                       controller: _searchController,
                       decoration: InputDecoration(
-                        hintText: 'Ara...',
+                        hintText: context.tr('search'),
                         prefixIcon: const Icon(Icons.search),
+                        filled: true,
+                        fillColor: theme.cardColor.withValues(alpha: 0.8),
                         border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
                         ),
                         isDense: true,
                       ),
@@ -273,141 +101,694 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  DropdownButton<String>(
-                    value: library.category,
-                    items: const [
-                      DropdownMenuItem(value: 'Tümü', child: Text('Tümü')),
-                      DropdownMenuItem(value: 'Genel', child: Text('Genel')),
-                      DropdownMenuItem(value: 'Manga', child: Text('Manga')),
-                      DropdownMenuItem(value: 'Kitap', child: Text('Kitap')),
-                      DropdownMenuItem(value: 'Makale', child: Text('Makale')),
-                    ],
-                    onChanged: (v) => context.read<LibraryProvider>().setCategory(v ?? 'Tümü'),
+                  // Filter toggle button
+                  IconButton(
+                    icon: Icon(
+                      _showFilters ? Icons.filter_alt : Icons.filter_alt_outlined,
+                      color: _showFilters ? theme.colorScheme.primary : null,
+                    ),
+                    tooltip: context.tr('filters'),
+                    onPressed: () => setState(() => _showFilters = !_showFilters),
                   ),
                 ],
               ),
             ),
-            Expanded(
-              child: FutureBuilder(
-                future: library.items.isEmpty ? context.read<LibraryProvider>().load() : null,
-                builder: (context, snapshot) {
-                  if (library.items.isEmpty) {
-                    return const Center(child: Text('Henüz link yok. + ile ekleyin.'));
-                  }
-                  return GridView.builder(
-                    padding: const EdgeInsets.all(12),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
-                      childAspectRatio: 0.8,
-                    ),
-                    itemCount: library.items.length,
-                    itemBuilder: (context, index) {
-                      final item = library.items[index];
-                      final selected = item.id != null && _selectedIds.contains(item.id);
-                      return GestureDetector(
-                        onLongPress: () {
-                          if (item.id == null) return;
-                          setState(() {
-                            if (_selectedIds.contains(item.id)) {
-                              _selectedIds.remove(item.id);
-                            } else {
-                              _selectedIds.add(item.id!);
-                            }
-                          });
-                        },
-                        onDoubleTap: () {
-                          Share.share(item.url, subject: item.title);
-                        },
-                        child: Stack(
-                          children: [
-                            _LibraryCard(item: item, index: index),
-                            if (selected)
-                              Positioned(
-                                top: 8,
-                                right: 8,
-                                child: CircleAvatar(
-                                  backgroundColor: Theme.of(context).colorScheme.primary,
-                                  radius: 14,
-                                  child: const Icon(Icons.check, size: 16, color: Colors.white),
-                                ),
-                              ),
-                            Positioned(
-                              top: 6,
-                              left: 6,
-                              child: PopupMenuButton<String>(
-                                icon: const Icon(Icons.more_vert, size: 18),
-                                onSelected: (v) async {
-                                  final prov = context.read<LibraryProvider>();
-                                  if (v == 'share') {
-                                    Share.share(item.url, subject: item.title);
-                                  } else if (v == 'open_brave') {
-                                    await openInExternalBrowser(item.url);
-                                  } else if (v == 'edit') {
-                                    // Undo için önceki halini sakla
-                                    _undoStack.add({'type': 'single_update', 'before': [item.copyWith()]});
-                                    showDialog(
-                                      context: context,
-                                      builder: (_) => EditLinkDialog(
-                                        initialTitle: item.title,
-                                        initialUrl: item.url,
-                                        initialCategory: item.category,
-                                        initialCover: item.coverPath,
-                                        onSubmit: ({required String title, required String url, required String category, String? cover}) async {
-                                          await prov.update(
-                                            item.copyWith(
-                                              title: title.isEmpty ? url : title,
-                                              url: url,
-                                              category: category,
-                                              coverPath: cover,
-                                            ),
-                                        );
-                                        },
-                                      ),
-                                    );
-                                  } else if (v == 'delete') {
-                                  _undoStack.add({'type': 'single_delete', 'before': [item.copyWith()]});
-                                  if (item.id != null) await prov.remove(item.id!);
-                                  }
-                                },
-                                itemBuilder: (ctx) => const [
-                                  PopupMenuItem(value: 'share', child: Text('Paylaş')),
-                                  PopupMenuItem(value: 'open_brave', child: Text('Brave\'de aç')),
-                                  PopupMenuItem(value: 'edit', child: Text('Düzenle')),
-                                  PopupMenuItem(value: 'delete', child: Text('Sil')),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
+
+            // Collapsible filter section
+            if (_showFilters) _buildFilterRow(context, library),
+
+            // Content
+            Expanded(child: _buildContent(context, library, theme)),
           ],
         ),
       ),
     );
   }
 
+  // ─── AppBar ───
+  PreferredSizeWidget _buildAppBar(BuildContext context, SettingsProvider settings, LibraryProvider library, ThemeData theme) {
+    return AppBar(
+      title: _selectionMode
+          ? Text('${_selectedIds.length} ${context.tr('selected_count')}')
+          : Text(context.tr('title'), style: const TextStyle(fontWeight: FontWeight.bold)),
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      actions: [
+        if (_selectionMode) ...[
+          IconButton(
+            tooltip: context.tr('pick_state'),
+            onPressed: () async {
+              final newState = await _pickReadingState(context);
+              if (newState != null && mounted) {
+                await context.read<LibraryProvider>().updateReadingStateMany(_selectedIds.toList(), newState);
+                setState(() => _selectedIds.clear());
+              }
+            },
+            icon: const Icon(Icons.bookmark_added_outlined),
+          ),
+          IconButton(
+            tooltip: context.tr('pick_category'),
+            onPressed: () async {
+              final newCat = await _pickCategory(context);
+              if (newCat != null && mounted) {
+                await context.read<LibraryProvider>().updateCategoryMany(_selectedIds.toList(), newCat);
+                setState(() => _selectedIds.clear());
+              }
+            },
+            icon: const Icon(Icons.label_outline),
+          ),
+          IconButton(
+            tooltip: context.tr('delete'),
+            onPressed: () async {
+              final before = library.items
+                  .where((e) => e.id != null && _selectedIds.contains(e.id))
+                  .map((e) => e.copyWith())
+                  .toList();
+              _undoStack.add({'type': 'bulk_delete', 'before': before});
+              await context.read<LibraryProvider>().removeMany(_selectedIds.toList());
+              setState(() => _selectedIds.clear());
+            },
+            icon: const Icon(Icons.delete_forever),
+          ),
+          IconButton(
+            tooltip: context.tr('cancel'),
+            onPressed: () => setState(() => _selectedIds.clear()),
+            icon: const Icon(Icons.clear),
+          ),
+        ],
+        if (!_selectionMode) ...[
+          // Dark mode toggle
+          IconButton(
+            tooltip: settings.isDarkMode ? 'Light Mode' : 'Dark Mode',
+            icon: Icon(settings.isDarkMode ? Icons.wb_sunny : Icons.nightlight_round, size: 22),
+            onPressed: () => context.read<SettingsProvider>().toggleDarkMode(),
+          ),
+          // Settings
+          IconButton(
+            tooltip: context.tr('settings'),
+            onPressed: () {
+              Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
+            },
+            icon: const Icon(Icons.settings, size: 22),
+          ),
+          // Main menu
+          IconButton(
+            icon: const Icon(Icons.more_vert),
+            tooltip: 'Menü',
+            onPressed: () {
+              final RenderBox button = context.findRenderObject() as RenderBox;
+              final RenderBox overlay = Navigator.of(context).overlay!.context.findRenderObject() as RenderBox;
+              final RelativeRect position = RelativeRect.fromRect(
+                Rect.fromPoints(
+                  button.localToGlobal(Offset.zero, ancestor: overlay),
+                  button.localToGlobal(button.size.bottomRight(Offset.zero), ancestor: overlay),
+                ),
+                Offset.zero & overlay.size,
+              );
+              showMenu<String>(
+                context: context,
+                position: position,
+                items: [
+                  _menuItem(Icons.notifications_active_outlined, context.tr('check_chapters'), 'check_chapters'),
+                  _menuItem(Icons.system_update, context.tr('check_update'), 'check_update'),
+                  _menuItem(Icons.share, context.tr('export'), 'export'),
+                  const PopupMenuDivider(),
+                  _menuItem(Icons.public, context.tr('manage_sites'), 'sites'),
+                  _menuItem(Icons.info_outline, context.tr('about'), 'about'),
+                ],
+              ).then((value) {
+                if (value != null) {
+                  _handleMenuAction(value, context);
+                }
+              });
+            },
+          ),
+        ],
+        // Undo button
+        if (_undoStack.isNotEmpty)
+          IconButton(
+            tooltip: context.tr('undo'),
+            onPressed: () async {
+              final last = _undoStack.removeLast();
+              final type = last['type'] as String;
+              final before = (last['before'] as List).cast<dynamic>();
+              final prov = context.read<LibraryProvider>();
+              if (type == 'bulk_delete' || type == 'single_delete') {
+                for (final m in before) await prov.add(m);
+              } else if (type == 'bulk_category' || type == 'single_update') {
+                for (final m in before) await prov.update(m);
+              }
+            },
+            icon: const Icon(Icons.undo),
+          ),
+      ],
+    );
+  }
+
+  PopupMenuItem<String> _menuItem(IconData icon, String text, String value) {
+    return PopupMenuItem(
+      value: value,
+      child: Row(
+        children: [
+          Icon(icon, size: 20),
+          const SizedBox(width: 12),
+          Text(text),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _handleMenuAction(String v, BuildContext context) async {
+    final prov = context.read<LibraryProvider>();
+    if (v == 'export') {
+      try {
+        final data = prov.items.map((e) => e.toMap()).toList();
+        final jsonStr = const JsonEncoder.withIndent('  ').convert(data);
+        final result = await Share.shareXFiles(
+          [XFile.fromData(
+            utf8.encode(jsonStr),
+            mimeType: 'application/json',
+            name: 'kitaplik_yedek_${DateTime.now().millisecondsSinceEpoch}.json',
+          )],
+          subject: 'Kitaplık Dışa Aktarım',
+        );
+        if (result.status == ShareResultStatus.success && context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(context.tr('export_success'))),
+          );
+        }
+      } catch (e) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('${context.tr('error')}: $e')),
+          );
+        }
+      }
+    } else if (v == 'check_chapters') {
+      _showLoadingThen(context, () => runCheckNow(), context.tr('check_chapters_done'));
+    } else if (v == 'check_update') {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const Center(child: CircularProgressIndicator()),
+      );
+      final available = await UpdateService.isUpdateAvailable();
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      if (available) {
+        _showUpdateDialog(context);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.tr('app_up_to_date'))),
+        );
+      }
+    } else if (v == 'about') {
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => const AboutScreen()));
+    } else if (v == 'sites') {
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SitesScreen()));
+    }
+  }
+
+  void _showLoadingThen(BuildContext ctx, Future<void> Function() task, String doneMsg) async {
+    showDialog(context: ctx, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
+    await task();
+    if (!mounted) return;
+    Navigator.of(ctx).pop();
+    ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(doneMsg)));
+  }
+
+  void _showUpdateDialog(BuildContext ctx) {
+    showDialog(
+      context: ctx,
+      builder: (_) => AlertDialog(
+        title: Text(ctx.tr('update_available')),
+        content: Text(ctx.tr('update_prompt')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(ctx.tr('cancel'))),
+          ElevatedButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(ctx).showSnackBar(
+                SnackBar(content: Text(ctx.tr('downloading')), duration: const Duration(seconds: 4)),
+              );
+              await UpdateService.startUpdate();
+            },
+            child: Text(ctx.tr('update_btn')),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── Filter Row (two separate rows) ───
+  Widget _buildFilterRow(BuildContext context, LibraryProvider library) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Reading State filters (top row)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _chip(context, library, 'Tümü', '📚 ${context.tr('all')}', isCategory: false),
+                _chip(context, library, 'reading', '📖 ${context.tr('reading')}', isCategory: false),
+                _chip(context, library, 'completed', '✅ ${context.tr('completed')}', isCategory: false),
+                _chip(context, library, 'notStarted', '⏳ ${context.tr('not_started')}', isCategory: false),
+              ],
+            ),
+          ),
+        ),
+        // Category filters (bottom row)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 8),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _chip(context, library, 'Tümü', context.tr('all'), isCategory: true),
+                _chip(context, library, 'Genel', context.tr('general'), isCategory: true),
+                _chip(context, library, 'Manga', context.tr('manga'), isCategory: true),
+                _chip(context, library, 'Kitap', context.tr('book'), isCategory: true),
+                _chip(context, library, 'Makale', context.tr('article'), isCategory: true),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _chip(BuildContext context, LibraryProvider library, String value, String label, {required bool isCategory}) {
+    final isSelected = isCategory
+        ? library.category == value
+        : library.readingState == value;
+
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: ChoiceChip(
+        selected: isSelected,
+        label: Text(label, style: const TextStyle(fontSize: 12)),
+        labelPadding: const EdgeInsets.symmetric(horizontal: 4),
+        visualDensity: VisualDensity.compact,
+        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        onSelected: (_) {
+          if (isCategory) {
+            context.read<LibraryProvider>().setCategory(value);
+          } else {
+            context.read<LibraryProvider>().setReadingState(value);
+          }
+        },
+      ),
+    );
+  }
+
+  // ─── Content Area ───
+  Widget _buildContent(BuildContext context, LibraryProvider library, ThemeData theme) {
+    if (!_loaded) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (library.items.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0.8, end: 1.0),
+              duration: const Duration(milliseconds: 1500),
+              curve: Curves.easeInOut,
+              builder: (context, value, child) {
+                return Transform.scale(
+                  scale: value,
+                  child: Opacity(opacity: value, child: child),
+                );
+              },
+              child: Icon(Icons.bookmark_outline, size: 80, color: Colors.grey.shade400),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              context.tr('no_links'),
+              style: TextStyle(color: Colors.grey.shade500, fontSize: 16, fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              context.tr('languageCode') == 'tr' ? '+ butonuna basarak eklemeye başlayın' : 'Tap + to start adding',
+              style: TextStyle(color: Colors.grey.shade400, fontSize: 13),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 80),
+      itemCount: library.items.length,
+      // Performance optimizations
+      addAutomaticKeepAlives: false,
+      addRepaintBoundaries: true,
+      cacheExtent: 500,
+      itemBuilder: (context, index) {
+        final item = library.items[index];
+        final selected = item.id != null && _selectedIds.contains(item.id);
+        return RepaintBoundary(
+          key: ValueKey(item.id),
+          child: _buildItemCard(context, item, selected, theme),
+        );
+      },
+    );
+  }
+
+  // ─── Individual Item Card (List style) ───
+  Widget _buildItemCard(BuildContext context, LinkItem item, bool selected, ThemeData theme) {
+    Color stateColor;
+    String stateLabel;
+    IconData stateIcon;
+    switch (item.readingState) {
+      case 'reading':
+        stateColor = Colors.teal;
+        stateLabel = context.tr('reading');
+        stateIcon = Icons.auto_stories;
+        break;
+      case 'completed':
+        stateColor = Colors.indigo;
+        stateLabel = context.tr('completed');
+        stateIcon = Icons.check_circle;
+        break;
+      case 'notStarted':
+      default:
+        stateColor = Colors.blueGrey;
+        stateLabel = context.tr('not_started');
+        stateIcon = Icons.schedule;
+        break;
+    }
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      elevation: selected ? 6 : 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: selected
+            ? BorderSide(color: theme.colorScheme.primary, width: 2)
+            : BorderSide.none,
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () => _openReader(context, item),
+        onLongPress: () {
+          if (item.id == null) return;
+          setState(() {
+            if (_selectedIds.contains(item.id)) {
+              _selectedIds.remove(item.id);
+            } else {
+              _selectedIds.add(item.id!);
+            }
+          });
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Row(
+            children: [
+              // Cover thumbnail
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: SizedBox(
+                  width: 56,
+                  height: 72,
+                  child: item.coverPath != null && item.coverPath!.isNotEmpty
+                      ? Image.network(
+                          item.coverPath!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => _defaultCover(stateColor),
+                          cacheWidth: 112, // Performance: cache smaller size
+                        )
+                      : _defaultCover(stateColor),
+                ),
+              ),
+              const SizedBox(width: 12),
+
+              // Title + badges
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, height: 1.3),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        // Category badge
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: theme.colorScheme.secondary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            item.category,
+                            style: TextStyle(
+                              color: theme.colorScheme.secondary,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        // State badge
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: stateColor.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: stateColor.withValues(alpha: 0.3)),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(stateIcon, size: 12, color: stateColor),
+                              const SizedBox(width: 4),
+                              Text(
+                                stateLabel,
+                                style: TextStyle(color: stateColor, fontSize: 10, fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    // Scroll progress bar
+                    if (item.lastScrollPosition > 0)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(2),
+                          child: LinearProgressIndicator(
+                            value: (item.lastScrollPosition / 5000).clamp(0.0, 1.0),
+                            minHeight: 3,
+                            backgroundColor: Colors.grey.shade300,
+                            valueColor: AlwaysStoppedAnimation(stateColor),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+
+              // Three-dot menu with simpler approach
+              IconButton(
+                icon: Icon(Icons.more_vert, color: theme.iconTheme.color),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+                onPressed: () => _showItemMenu(context, item),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Show item menu using bottom sheet for better reliability
+  void _showItemMenu(BuildContext context, LinkItem item) {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.share),
+              title: Text(context.tr('share')),
+              onTap: () {
+                Navigator.pop(ctx);
+                _handleItemAction('share', item, context);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.open_in_browser),
+              title: Text(context.tr('open_brave')),
+              onTap: () {
+                Navigator.pop(ctx);
+                _handleItemAction('open_brave', item, context);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.edit),
+              title: Text(context.tr('edit')),
+              onTap: () {
+                Navigator.pop(ctx);
+                _handleItemAction('edit', item, context);
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.schedule),
+              title: Text(context.tr('not_started')),
+              onTap: () {
+                Navigator.pop(ctx);
+                _handleItemAction('state_notStarted', item, context);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.auto_stories),
+              title: Text(context.tr('reading')),
+              onTap: () {
+                Navigator.pop(ctx);
+                _handleItemAction('state_reading', item, context);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.check_circle),
+              title: Text(context.tr('completed')),
+              onTap: () {
+                Navigator.pop(ctx);
+                _handleItemAction('state_completed', item, context);
+              },
+            ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
+              title: Text(context.tr('delete'), style: const TextStyle(color: Colors.redAccent)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _handleItemAction('delete', item, context);
+              },
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _defaultCover(Color color) {
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [color.withValues(alpha: 0.6), color],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: const Center(child: Icon(Icons.menu_book, size: 28, color: Colors.white)),
+    );
+  }
+
+  // ─── Item Actions ───
+  Future<void> _handleItemAction(String action, LinkItem item, BuildContext ctx) async {
+    final prov = ctx.read<LibraryProvider>();
+    switch (action) {
+      case 'share':
+        Share.share(item.url, subject: item.title);
+        break;
+      case 'open_brave':
+        await openInExternalBrowser(item.url);
+        break;
+      case 'edit':
+        _undoStack.add({'type': 'single_update', 'before': [item.copyWith()]});
+        if (!ctx.mounted) return;
+        showDialog(
+          context: ctx,
+          builder: (_) => EditLinkDialog(
+            initialTitle: item.title,
+            initialUrl: item.url,
+            initialCategory: item.category,
+            initialCover: item.coverPath,
+            onSubmit: ({required String title, required String url, required String category, String? cover}) async {
+              await prov.update(item.copyWith(
+                title: title.isEmpty ? url : title,
+                url: url,
+                category: category,
+                coverPath: cover,
+              ));
+            },
+          ),
+        );
+        break;
+      case 'delete':
+        _undoStack.add({'type': 'single_delete', 'before': [item.copyWith()]});
+        if (item.id != null) await prov.remove(item.id!);
+        break;
+      case 'state_notStarted':
+        await prov.update(item.copyWith(readingState: 'notStarted'));
+        break;
+      case 'state_reading':
+        await prov.update(item.copyWith(readingState: 'reading'));
+        break;
+      case 'state_completed':
+        await prov.update(item.copyWith(readingState: 'completed'));
+        break;
+    }
+  }
+
+  void _openReader(BuildContext ctx, LinkItem item) async {
+    final prov = ctx.read<LibraryProvider>();
+    if (item.readingState == 'notStarted') {
+      await prov.update(item.copyWith(readingState: 'reading'));
+    }
+    if (!ctx.mounted) return;
+    Navigator.of(ctx).push(
+      MaterialPageRoute(
+        builder: (_) => ReaderScreen(
+          title: item.title,
+          url: item.url,
+          onUrlChanged: (newUrl) async {
+            if (item.id == null) return;
+            await prov.update(item.copyWith(url: newUrl));
+          },
+          onScrollChanged: (y) async {
+            if (item.id == null) return;
+            await prov.updateScroll(item.id!, y);
+          },
+        ),
+      ),
+    );
+  }
+
+  // ─── Add Dialog ───
   void _showAdd() {
     showDialog(
       context: context,
       builder: (_) => AddLinkDialog(
         onSubmit: ({required String title, required String url, required String category, String? cover}) async {
-          // Basit kapak üretme: site favicon denemesi
           String? coverUrl = cover;
-          if ((coverUrl == null || coverUrl.isEmpty)) {
+          if (coverUrl == null || coverUrl.isEmpty) {
             try {
               final uri = Uri.parse(url);
               final guess = Uri.parse('https://www.google.com/s2/favicons?sz=128&domain_url=${uri.scheme}://${uri.host}');
-              final res = await http.get(guess);
+              final res = await http.get(guess).timeout(const Duration(seconds: 2));
               if (res.statusCode == 200) coverUrl = guess.toString();
             } catch (_) {}
           }
+          if (!mounted) return;
           await context.read<LibraryProvider>().add(
                 LinkItem(
                   title: title.isEmpty ? url : title,
@@ -423,138 +804,50 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
+// ─── Dialogs ───
 Future<String?> _pickCategory(BuildContext context) async {
   String temp = 'Genel';
   return showDialog<String>(
     context: context,
     builder: (_) => AlertDialog(
-      title: const Text('Kategori seçin'),
-      content: DropdownButton<String>(
+      title: Text(context.tr('pick_category')),
+      content: DropdownButtonFormField<String>(
         value: temp,
-        items: const [
-          DropdownMenuItem(value: 'Genel', child: Text('Genel')),
-          DropdownMenuItem(value: 'Manga', child: Text('Manga')),
-          DropdownMenuItem(value: 'Kitap', child: Text('Kitap')),
-          DropdownMenuItem(value: 'Makale', child: Text('Makale')),
+        items: [
+          DropdownMenuItem(value: 'Genel', child: Text(context.tr('general'))),
+          DropdownMenuItem(value: 'Manga', child: Text(context.tr('manga'))),
+          DropdownMenuItem(value: 'Kitap', child: Text(context.tr('book'))),
+          DropdownMenuItem(value: 'Makale', child: Text(context.tr('article'))),
         ],
         onChanged: (v) => temp = v ?? 'Genel',
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('İptal')),
-        ElevatedButton(onPressed: () => Navigator.pop(context, temp), child: const Text('Uygula')),
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(context.tr('cancel'))),
+        ElevatedButton(onPressed: () => Navigator.pop(context, temp), child: Text(context.tr('apply'))),
       ],
     ),
   );
 }
 
-class _LibraryCard extends StatelessWidget {
-  final LinkItem item;
-  final int index;
-  const _LibraryCard({required this.item, required this.index});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => ReaderScreen(
-              title: item.title,
-              url: item.url,
-              onUrlChanged: (newUrl) async {
-                final prov = context.read<LibraryProvider>();
-                if (item.id == null) return;
-                await prov.update(item.copyWith(url: newUrl));
-              },
-            ),
-          ),
-        );
-      },
-      child: Card(
-        elevation: 2,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-                child: item.coverPath == null || item.coverPath!.isEmpty
-                    ? Container(
-                        color: Colors.grey.shade300,
-                        child: const Icon(Icons.public, size: 48),
-                      )
-                    : Image.network(
-                        item.coverPath!,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          color: Colors.grey.shade300,
-                          child: const Icon(Icons.public, size: 48),
-                        ),
-                      ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    item.category,
-                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-                  ),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      IconButton(
-                        tooltip: 'Düzenle',
-                        onPressed: () {
-                          showDialog(
-                            context: context,
-                            builder: (_) => EditLinkDialog(
-                              initialTitle: item.title,
-                              initialUrl: item.url,
-                              initialCategory: item.category,
-                              initialCover: item.coverPath,
-                              onSubmit: ({required String title, required String url, required String category, String? cover}) async {
-                                final prov = context.read<LibraryProvider>();
-                                await prov.update(
-                                  item.copyWith(
-                                    title: title.isEmpty ? url : title,
-                                    url: url,
-                                    category: category,
-                                    coverPath: cover,
-                                  ),
-                                );
-                              },
-                            ),
-                          );
-                        },
-                        icon: const Icon(Icons.edit_outlined),
-                      ),
-                      IconButton(
-                        tooltip: 'Brave\'de aç',
-                        onPressed: () => openInExternalBrowser(item.url),
-                        icon: const Icon(Icons.open_in_new),
-                      ),
-                      // Kart üzerinden silme kaldırıldı (Geri al uyumu için üst menüde kullanın)
-                    ],
-                  )
-                ],
-              ),
-            ),
-          ],
-        ),
+Future<String?> _pickReadingState(BuildContext context) async {
+  String temp = 'notStarted';
+  return showDialog<String>(
+    context: context,
+    builder: (_) => AlertDialog(
+      title: Text(context.tr('pick_state')),
+      content: DropdownButtonFormField<String>(
+        value: temp,
+        items: [
+          DropdownMenuItem(value: 'notStarted', child: Text(context.tr('not_started'))),
+          DropdownMenuItem(value: 'reading', child: Text(context.tr('reading'))),
+          DropdownMenuItem(value: 'completed', child: Text(context.tr('completed'))),
+        ],
+        onChanged: (v) => temp = v ?? 'notStarted',
       ),
-    );
-  }
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: Text(context.tr('cancel'))),
+        ElevatedButton(onPressed: () => Navigator.pop(context, temp), child: Text(context.tr('apply'))),
+      ],
+    ),
+  );
 }
-
-

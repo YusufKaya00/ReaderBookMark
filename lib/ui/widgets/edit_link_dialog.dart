@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../utils/translations.dart';
 
 class EditLinkDialog extends StatefulWidget {
   final String initialTitle;
@@ -65,7 +66,7 @@ class _EditLinkDialogState extends State<EditLinkDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Linki Düzenle'),
+      title: Text(context.tr('edit')),
       content: Form(
         key: _formKey,
         child: SingleChildScrollView(
@@ -74,8 +75,12 @@ class _EditLinkDialogState extends State<EditLinkDialog> {
             children: [
               TextFormField(
                 controller: _titleController,
-                decoration: const InputDecoration(labelText: 'Başlık'),
-                validator: (v) => (v == null || v.trim().isEmpty) ? 'Başlık gerekli' : null,
+                decoration: InputDecoration(
+                  labelText: context.tr('languageCode') == 'tr' ? 'Başlık' : 'Title',
+                ),
+                validator: (v) => (v == null || v.trim().isEmpty)
+                    ? (context.tr('languageCode') == 'tr' ? 'Başlık gerekli' : 'Title is required')
+                    : null,
               ),
               const SizedBox(height: 8),
               TextFormField(
@@ -84,7 +89,7 @@ class _EditLinkDialogState extends State<EditLinkDialog> {
                   labelText: 'URL',
                   suffixIcon: (_clipboardUrl != null)
                       ? IconButton(
-                          tooltip: 'Panodaki linki yapıştır',
+                          tooltip: context.tr('languageCode') == 'tr' ? 'Panodaki linki yapıştır' : 'Paste from clipboard',
                           icon: const Icon(Icons.paste),
                           onPressed: () {
                             setState(() {
@@ -96,28 +101,34 @@ class _EditLinkDialogState extends State<EditLinkDialog> {
                 ),
                 keyboardType: TextInputType.url,
                 validator: (v) {
-                  if (v == null || v.trim().isEmpty) return 'URL gerekli';
+                  if (v == null || v.trim().isEmpty) {
+                    return context.tr('languageCode') == 'tr' ? 'URL gerekli' : 'URL is required';
+                  }
                   final ok = Uri.tryParse(v)?.hasAbsolutePath ?? false;
-                  return ok ? null : 'Geçerli bir URL girin';
+                  return ok ? null : (context.tr('languageCode') == 'tr' ? 'Geçerli bir URL girin' : 'Enter a valid URL');
                 },
               ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
                 value: _category,
-                items: const [
-                  DropdownMenuItem(value: 'Genel', child: Text('Genel')),
-                  DropdownMenuItem(value: 'Manga', child: Text('Manga')),
-                  DropdownMenuItem(value: 'Kitap', child: Text('Kitap')),
-                  DropdownMenuItem(value: 'Makale', child: Text('Makale')),
+                items: [
+                  DropdownMenuItem(value: 'Genel', child: Text(context.tr('general'))),
+                  DropdownMenuItem(value: 'Manga', child: Text(context.tr('manga'))),
+                  DropdownMenuItem(value: 'Kitap', child: Text(context.tr('book'))),
+                  DropdownMenuItem(value: 'Makale', child: Text(context.tr('article'))),
                 ],
                 onChanged: (v) => setState(() => _category = v ?? 'Genel'),
-                decoration: const InputDecoration(labelText: 'Kategori'),
+                decoration: InputDecoration(
+                  labelText: context.tr('languageCode') == 'tr' ? 'Kategori' : 'Category',
+                ),
               ),
               const SizedBox(height: 8),
               TextFormField(
                 controller: _coverController,
-                decoration: const InputDecoration(
-                  labelText: 'Kapak Görseli (isteğe bağlı URL)'
+                decoration: InputDecoration(
+                  labelText: context.tr('languageCode') == 'tr'
+                      ? 'Kapak Görseli (isteğe bağlı URL)'
+                      : 'Cover Image (optional URL)',
                 ),
               ),
             ],
@@ -127,7 +138,7 @@ class _EditLinkDialogState extends State<EditLinkDialog> {
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('İptal'),
+          child: Text(context.tr('cancel')),
         ),
         ElevatedButton(
           onPressed: () {
@@ -141,7 +152,7 @@ class _EditLinkDialogState extends State<EditLinkDialog> {
               Navigator.of(context).pop();
             }
           },
-          child: const Text('Kaydet'),
+          child: Text(context.tr('save')),
         ),
       ],
     );

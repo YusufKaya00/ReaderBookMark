@@ -5,7 +5,6 @@ import 'providers/settings_provider.dart';
 import 'providers/library_provider.dart';
 import 'ui/screens/home_screen.dart';
 import 'background/new_chapter_check.dart';
-import 'update/update_service.dart';
 import 'package:workmanager/workmanager.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -14,13 +13,6 @@ void main() {
   WidgetsFlutterBinding.ensureInitialized();
   _ensureNotificationPermission();
   initBackground();
-  // İsteğe bağlı: açılışta güncelleme kontrolü (Android)
-  UpdateService.isUpdateAvailable().then((available) async {
-    if (available) {
-      // Basit tetikleyici: OTA başlat (gerçekte UI diyalogu göstermeyi tercih edebilirsiniz)
-      await UpdateService.startUpdate();
-    }
-  });
   runApp(const AppRoot());
   Workmanager().initialize(_backgroundHeadless, isInDebugMode: false);
 }

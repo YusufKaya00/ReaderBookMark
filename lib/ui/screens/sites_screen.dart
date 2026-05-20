@@ -1,6 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../background/new_chapter_check.dart';
+import '../../utils/translations.dart';
+
+const List<String> kAllowedHosts = [
+  'hayalistic.com.tr',
+  'tortugaceviri.com',
+  'ruyamanga.net',
+  'asuracomic.net',
+  'tempestmangas.com',
+  'asurascans.com.tr',
+  'uzaymanga.com',
+];
 
 class SitesScreen extends StatefulWidget {
   const SitesScreen({super.key});
@@ -22,9 +32,6 @@ class _SitesScreenState extends State<SitesScreen> {
   Future<void> _load() async {
     final sp = await SharedPreferences.getInstance();
     final manual = sp.getStringList('tracked_urls') ?? <String>[];
-    // Sabit hostlardan sadece manuel liste (tracked_urls) yönetilebilir olsun
-    // Sabitleri otomatik gösterelim, ancak kaldırılmasın
-    final fixed = getAllowedHosts().map((h) => 'https://$h').toList();
     setState(() {
       _urls = manual;
     });
@@ -37,12 +44,14 @@ class _SitesScreenState extends State<SitesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final isTr = Localizations.localeOf(context).languageCode == 'tr';
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Siteleri Yönet'),
+        title: Text(context.tr('manage_sites')),
         actions: [
           IconButton(
-            tooltip: 'Temizle',
+            tooltip: isTr ? 'Temizle' : 'Clear',
             onPressed: () async {
               setState(() => _urls.clear());
               await _save();
@@ -60,9 +69,9 @@ class _SitesScreenState extends State<SitesScreen> {
                 Expanded(
                   child: TextField(
                     controller: _controller,
-                    decoration: const InputDecoration(
-                      hintText: 'Site URL ekle (https://...)',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      hintText: isTr ? 'Site URL ekle (https://...)' : 'Add Site URL (https://...)',
+                      border: const OutlineInputBorder(),
                       isDense: true,
                     ),
                     keyboardType: TextInputType.url,
@@ -73,9 +82,10 @@ class _SitesScreenState extends State<SitesScreen> {
                   onPressed: () async {
                     final u = _controller.text.trim();
                     if (u.isEmpty) return;
-                    // Sadece host başlangıçlarını kabul et (scheme + host)
                     Uri? uri;
-                    try { uri = Uri.parse(u); } catch (_) {}
+                    try {
+                      uri = Uri.parse(u);
+                    } catch (_) {}
                     if (uri == null || uri.host.isEmpty) return;
                     final normalized = '${uri.scheme.isEmpty ? 'https' : uri.scheme}://${uri.host}';
                     if (!_urls.contains(normalized)) {
@@ -84,7 +94,7 @@ class _SitesScreenState extends State<SitesScreen> {
                     }
                     _controller.clear();
                   },
-                  child: const Text('Ekle'),
+                  child: Text(context.tr('add')),
                 )
               ],
             ),
@@ -92,18 +102,24 @@ class _SitesScreenState extends State<SitesScreen> {
           Expanded(
             child: ListView(
               children: [
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  child: Text('Sabit Siteler (değiştirilemez)', style: TextStyle(fontWeight: FontWeight.bold)),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  child: Text(
+                    isTr ? 'Sabit Siteler (değiştirilemez)' : 'Fixed Sites (non-removable)',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
                 ),
-                ...getAllowedHosts().map((h) => ListTile(
+                ...kAllowedHosts.map((h) => ListTile(
                       leading: const Icon(Icons.lock),
                       title: Text('https://$h', maxLines: 1, overflow: TextOverflow.ellipsis),
-                      subtitle: const Text('Bildirim için sabit'),
+                      subtitle: Text(isTr ? 'Bildirim için sabit' : 'Fixed for notifications'),
                     )),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  child: Text('Manuel Eklenenler', style: TextStyle(fontWeight: FontWeight.bold)),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  child: Text(
+                    isTr ? 'Manuel Eklenenler' : 'Manually Added',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
                 ),
                 ..._urls.asMap().entries.map((e) {
                   final i = e.key;

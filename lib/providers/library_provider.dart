@@ -8,13 +8,15 @@ class LibraryProvider extends ChangeNotifier {
   List<LinkItem> _items = [];
   String _query = '';
   String _category = 'Tümü';
+  String _readingState = 'Tümü';
 
   List<LinkItem> get items => _items;
   String get query => _query;
   String get category => _category;
+  String get readingState => _readingState;
 
   Future<void> load() async {
-    _items = await _db.getAllLinks(query: _query, category: _category);
+    _items = await _db.getAllLinks(query: _query, category: _category, readingState: _readingState);
     notifyListeners();
   }
 
@@ -57,9 +59,24 @@ class LibraryProvider extends ChangeNotifier {
     load();
   }
 
+  void setReadingState(String v) {
+    _readingState = v;
+    load();
+  }
+
   Future<void> updateCategoryMany(List<int> ids, String category) async {
     await _db.updateCategoryMany(ids: ids, category: category);
     await load();
+  }
+
+  Future<void> updateReadingStateMany(List<int> ids, String readingState) async {
+    if (ids.isEmpty) return;
+    for (final id in ids) {
+      final i = _items.indexWhere((e) => e.id == id);
+      if (i >= 0) {
+        await update(_items[i].copyWith(readingState: readingState));
+      }
+    }
   }
 }
 

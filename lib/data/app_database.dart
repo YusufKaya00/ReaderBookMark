@@ -14,7 +14,7 @@ class AppDatabase {
   AppDatabase._internal();
 
   static const _dbName = 'library_links.db';
-  static const _dbVersion = 1;
+  static const _dbVersion = 2;
   static const tableLinks = 'links';
 
   Database? _db;
@@ -44,13 +44,22 @@ class AppDatabase {
           cover_path TEXT,
           category TEXT NOT NULL,
           created_at INTEGER NOT NULL,
-          last_scroll_position REAL NOT NULL DEFAULT 0
+          last_scroll_position REAL NOT NULL DEFAULT 0,
+          reading_state TEXT NOT NULL DEFAULT 'notStarted'
         );
         ''');
         await db.execute(
             'CREATE INDEX IF NOT EXISTS idx_links_category ON $tableLinks(category)');
         await db.execute(
             'CREATE INDEX IF NOT EXISTS idx_links_title ON $tableLinks(title)');
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          try {
+            await db.execute(
+                "ALTER TABLE $tableLinks ADD COLUMN reading_state TEXT NOT NULL DEFAULT 'notStarted'");
+          } catch (_) {}
+        }
       },
     );
   }
@@ -82,7 +91,7 @@ class AppDatabase {
     return await db.rawDelete('DELETE FROM $tableLinks WHERE id IN ($placeholders)', ids);
   }
 
-  Future<List<LinkItem>> getAllLinks({String? query, String? category}) async {
+  Future<List<LinkItem>> getAllLinks({String? query, String? category, String? readingState}) async {
     final db = await database;
     final where = <String>[];
     final args = <Object?>[];
@@ -91,9 +100,13 @@ class AppDatabase {
       final like = '%${query.trim()}%';
       args.addAll([like, like]);
     }
-    if (category != null && category.isNotEmpty && category != 'Tümü') {
+    if (category != null && category.isNotEmpty && category != 'Tümü' && category != 'All') {
       where.add('category = ?');
       args.add(category);
+    }
+    if (readingState != null && readingState.isNotEmpty && readingState != 'Tümü' && readingState != 'All') {
+      where.add('reading_state = ?');
+      args.add(readingState);
     }
     final whereClause = where.isEmpty ? null : where.join(' AND ');
     final rows = await db.query(

@@ -8,6 +8,7 @@ class LinkItem {
   final String category;
   final DateTime createdAt;
   final double lastScrollPosition;
+  final String readingState; // 'notStarted', 'reading', 'completed'
 
   const LinkItem({
     this.id,
@@ -17,6 +18,7 @@ class LinkItem {
     required this.category,
     required this.createdAt,
     this.lastScrollPosition = 0.0,
+    this.readingState = 'notStarted',
   });
 
   LinkItem copyWith({
@@ -27,6 +29,7 @@ class LinkItem {
     String? category,
     DateTime? createdAt,
     double? lastScrollPosition,
+    String? readingState,
   }) {
     return LinkItem(
       id: id ?? this.id,
@@ -36,6 +39,7 @@ class LinkItem {
       category: category ?? this.category,
       createdAt: createdAt ?? this.createdAt,
       lastScrollPosition: lastScrollPosition ?? this.lastScrollPosition,
+      readingState: readingState ?? this.readingState,
     );
   }
 
@@ -48,6 +52,7 @@ class LinkItem {
       'category': category,
       'created_at': createdAt.millisecondsSinceEpoch,
       'last_scroll_position': lastScrollPosition,
+      'reading_state': readingState,
     };
   }
 
@@ -62,6 +67,7 @@ class LinkItem {
           DateTime.fromMillisecondsSinceEpoch(map['created_at'] as int? ?? 0),
       lastScrollPosition: (map['last_scroll_position'] as num?)?.toDouble() ??
           0.0,
+      readingState: map['reading_state'] as String? ?? 'notStarted',
     );
   }
 
