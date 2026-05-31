@@ -17,3 +17,7 @@
 -keep class org.sqlite.** { *; }
 -keep class org.sqlite.database.** { *; }
 
+# Play Core dynamic delivery fallback
+-dontwarn com.google.android.play.core.**
+
+
