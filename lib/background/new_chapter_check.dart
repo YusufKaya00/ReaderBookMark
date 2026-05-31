@@ -46,72 +46,81 @@ void _workCallback() {
 }
 
 Future<void> _alarmEntry() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  final db = AppDatabase();
-  final items = await db.getAllLinks();
-  if (items.isEmpty) return;
+  try {
+    WidgetsFlutterBinding.ensureInitialized();
+    final db = AppDatabase();
+    final items = await db.getAllLinks();
+    if (items.isEmpty) return;
 
-  final sp = await SharedPreferences.getInstance();
-  final notifier = FlutterLocalNotificationsPlugin();
-  
-  const androidInit = AndroidInitializationSettings('ic_launcher');
-  await notifier.initialize(const InitializationSettings(android: androidInit));
-
-  // 1. DIRECT CHECK: Inspect base manga pages of active reading bookmarks (up to 10 bookmarks)
-  final bookmarksToCheck = items.where((e) => e.readingState == 'reading').take(10).toList();
-
-  // Check bookmarks concurrently in chunks of 5
-  for (int i = 0; i < bookmarksToCheck.length; i += 5) {
-    final chunk = bookmarksToCheck.sublist(i, (i + 5).clamp(0, bookmarksToCheck.length));
-    await Future.wait(chunk.map((item) => _checkSingleLink(item, sp, notifier, db)));
-  }
-
-  // 2. HOMEPAGE CHECK: Scan Site Manager homepages for matches with all bookmarks (up to 100)
-  final bookmarkSlugs = <String, LinkItem>{};
-  for (final item in items) {
-    final slug = _getMangaSlug(item.url);
-    if (slug.isNotEmpty) {
-      bookmarkSlugs[slug] = item;
-    }
-  }
-
-  if (bookmarkSlugs.isNotEmpty) {
-    // Detect which hosts the user actually has in their bookmarks
-    final bookmarkedHosts = items.map((e) {
-      try {
-        return Uri.parse(e.url).host.toLowerCase().replaceAll('www.', '');
-      } catch (_) {
-        return '';
-      }
-    }).where((h) => h.isNotEmpty).toSet();
-
-    final manualSites = sp.getStringList('tracked_urls') ?? <String>[];
-    final sitesToCheck = <String>[];
+    final sp = await SharedPreferences.getInstance();
+    final notifier = FlutterLocalNotificationsPlugin();
     
-    // Add manual sites if they belong to bookmarked hosts
-    for (final s in manualSites) {
-      try {
-        final host = Uri.parse(s).host.toLowerCase().replaceAll('www.', '');
-        if (bookmarkedHosts.contains(host)) {
-          sitesToCheck.add(s);
+    try {
+      const androidInit = AndroidInitializationSettings('ic_launcher');
+      await notifier.initialize(const InitializationSettings(android: androidInit));
+    } catch (e) {
+      debugPrint('Local notifications initialization failed: $e');
+    }
+
+    // 1. DIRECT CHECK: Inspect base manga pages of active reading bookmarks (up to 10 bookmarks)
+    final bookmarksToCheck = items.where((e) => e.readingState == 'reading').take(10).toList();
+
+    // Check bookmarks concurrently in chunks of 5
+    for (int i = 0; i < bookmarksToCheck.length; i += 5) {
+      final chunk = bookmarksToCheck.sublist(i, (i + 5).clamp(0, bookmarksToCheck.length));
+      await Future.wait(chunk.map((item) => _checkSingleLink(item, sp, notifier, db)));
+    }
+
+    // 2. HOMEPAGE CHECK: Scan Site Manager homepages for matches with all bookmarks (up to 100)
+    final bookmarkSlugs = <String, LinkItem>{};
+    for (final item in items) {
+      final slug = _getMangaSlug(item.url);
+      if (slug.isNotEmpty) {
+        bookmarkSlugs[slug] = item;
+      }
+    }
+
+    if (bookmarkSlugs.isNotEmpty) {
+      // Detect which hosts the user actually has in their bookmarks
+      final bookmarkedHosts = items.map((e) {
+        try {
+          return Uri.parse(e.url).host.toLowerCase().replaceAll('www.', '');
+        } catch (_) {
+          return '';
         }
-      } catch (_) {}
-    }
-    
-    // Add kNotificationAllowedHosts if we have bookmarks on them
-    for (final h in kNotificationAllowedHosts) {
-      if (bookmarkedHosts.contains(h)) {
-        sitesToCheck.add('https://$h');
-      }
-    }
+      }).where((h) => h.isNotEmpty).toSet();
 
-    if (sitesToCheck.isNotEmpty) {
-      // Check homepages concurrently in chunks of 3
-      for (int i = 0; i < sitesToCheck.length; i += 3) {
-        final chunk = sitesToCheck.sublist(i, (i + 3).clamp(0, sitesToCheck.length));
-        await Future.wait(chunk.map((siteUrl) => _checkHomepageForUpdates(siteUrl, bookmarkSlugs, sp, notifier, db)));
+      final manualSites = sp.getStringList('tracked_urls') ?? <String>[];
+      final sitesToCheck = <String>[];
+      
+      // Add manual sites if they belong to bookmarked hosts
+      for (final s in manualSites) {
+        try {
+          final host = Uri.parse(s).host.toLowerCase().replaceAll('www.', '');
+          if (bookmarkedHosts.contains(host)) {
+            sitesToCheck.add(s);
+          }
+        } catch (_) {}
+      }
+      
+      // Add kNotificationAllowedHosts if we have bookmarks on them
+      for (final h in kNotificationAllowedHosts) {
+        if (bookmarkedHosts.contains(h)) {
+          sitesToCheck.add('https://$h');
+        }
+      }
+
+      if (sitesToCheck.isNotEmpty) {
+        // Check homepages concurrently in chunks of 3
+        for (int i = 0; i < sitesToCheck.length; i += 3) {
+          final chunk = sitesToCheck.sublist(i, (i + 3).clamp(0, sitesToCheck.length));
+          await Future.wait(chunk.map((siteUrl) => _checkHomepageForUpdates(siteUrl, bookmarkSlugs, sp, notifier, db)));
+        }
       }
     }
+  } catch (e, stack) {
+    debugPrint('Critical error in background checker: $e');
+    debugPrint(stack.toString());
   }
 }
 

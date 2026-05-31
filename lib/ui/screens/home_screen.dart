@@ -337,7 +337,16 @@ class _HomeScreenState extends State<HomeScreen> {
     if (v == 'export') {
       showExportDialog(context);
     } else if (v == 'check_chapters') {
-      _showLoadingThen(context, () => runCheckNow(), context.tr('check_chapters_done'));
+      _showLoadingThen(
+        context,
+        () async {
+          await runCheckNow();
+          if (context.mounted) {
+            await context.read<NotificationProvider>().load();
+          }
+        },
+        context.tr('check_chapters_done'),
+      );
     } else if (v == 'check_update') {
       showDialog(
         context: context,
@@ -362,11 +371,25 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _showLoadingThen(BuildContext ctx, Future<void> Function() task, String doneMsg) async {
-    showDialog(context: ctx, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator()));
-    await task();
-    if (!mounted) return;
-    Navigator.of(ctx).pop();
-    ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(doneMsg)));
+    showDialog(
+      context: ctx,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    try {
+      await task();
+      if (ctx.mounted) {
+        Navigator.of(ctx).pop();
+        ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(doneMsg)));
+      }
+    } catch (e) {
+      if (ctx.mounted) {
+        Navigator.of(ctx).pop();
+        ScaffoldMessenger.of(ctx).showSnackBar(
+          SnackBar(content: Text('Hata oluştu: $e')),
+        );
+      }
+    }
   }
 
   void _showUpdateDialog(BuildContext ctx, UpdateManifest manifest) {
