@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/link_item.dart';
 import '../../providers/library_provider.dart';
@@ -61,7 +62,192 @@ class _HomeScreenState extends State<HomeScreen> {
     final library = context.read<LibraryProvider>();
     await settings.load();
     await library.load();
-    if (mounted) setState(() => _loaded = true);
+    if (mounted) {
+      setState(() => _loaded = true);
+      _checkForWhatsNew();
+    }
+  }
+
+  Future<void> _checkForWhatsNew() async {
+    try {
+      final sp = await SharedPreferences.getInstance();
+      final info = await PackageInfo.fromPlatform();
+      final currentVersion = '${info.version}+${info.buildNumber}';
+      final lastShownVersion = sp.getString('last_shown_version');
+
+      if (lastShownVersion != currentVersion) {
+        await sp.setString('last_shown_version', currentVersion);
+        if (mounted) {
+          _showWhatsNewDialog(context);
+        }
+      }
+    } catch (_) {}
+  }
+
+  void _showWhatsNewDialog(BuildContext context) {
+    final isTr = Localizations.localeOf(context).languageCode == 'tr';
+    
+    final title = isTr ? 'Yenilikler' : "What's New";
+    final subtitle = isTr 
+        ? 'ReaderBookMark yeni özelliklerle güncellendi!' 
+        : 'ReaderBookMark updated with new features!';
+    
+    final items = [
+      {
+        'icon': Icons.cloud_sync,
+        'title': isTr ? 'Toplu Link Ekleme, Dışa/İçe Aktarma' : 'Bulk Link Adding, Export & Import',
+        'desc': isTr 
+            ? 'Yer imlerinizi toplu ekleyebilir, dışa aktarabilir veya yedekten geri yükleyebilirsiniz.' 
+            : 'Add multiple links at once, export them, or restore from backups.',
+      },
+      {
+        'icon': Icons.label_important_outline,
+        'title': isTr ? 'Linkten Otomatik İsim Ayırma' : 'Automatic Title Parsing',
+        'desc': isTr 
+            ? 'Eklediğiniz linklerden manga isimleri otomatik olarak çıkartılır.' 
+            : 'Manga titles are automatically extracted from added URLs.',
+      },
+      {
+        'icon': Icons.autorenew,
+        'title': isTr ? 'Otomatik Güncelleme Düzenlemesi' : 'Auto-Update Optimization',
+        'desc': isTr 
+            ? 'Uygulama içi güncellemeler daha kararlı ve hızlı çalışacak şekilde optimize edildi.' 
+            : 'In-app update downloading is optimized to be more robust.',
+      },
+      {
+        'icon': Icons.notifications_active_outlined,
+        'title': isTr ? 'Bölüm Bildirimi Kontrolü' : 'Chapter Notification Checking',
+        'desc': isTr 
+            ? 'Kitaplığınızdaki seriler için otomatik yeni bölüm kontrolü aktifleştirildi.' 
+            : 'Background checker actively looks for new chapters of your bookmarks.',
+      },
+      {
+        'icon': Icons.star_outline,
+        'title': isTr ? 'Bildirim Ekranı' : 'Notification Screen',
+        'desc': isTr 
+            ? 'Gelen yeni bölüm bildirimlerini görebileceğiniz modern bildirim ekranı eklendi.' 
+            : 'Access a modern notifications tray directly from the home star icon.',
+      },
+      {
+        'icon': Icons.system_update_alt,
+        'title': isTr ? 'Güncelleme Ekranı' : 'Update Dialog Screen',
+        'desc': isTr 
+            ? 'Yeni bir sürüm yayınlandığında güncellemeyi kolayca indirip kurabileceğiniz arayüz.' 
+            : 'Easily download and install updates from the new check-update UI.',
+      },
+    ];
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          titlePadding: const EdgeInsets.fromLTRB(24, 24, 24, 8),
+          contentPadding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+          title: Row(
+            children: [
+              Icon(Icons.auto_awesome, color: Colors.amber[700], size: 28),
+              const SizedBox(width: 12),
+              Text(
+                title,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 22),
+              ),
+            ],
+          ),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.only(left: 4.0, bottom: 16.0),
+                  child: Text(
+                    subtitle,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.textTheme.bodyMedium?.color?.withOpacity(0.7),
+                    ),
+                  ),
+                ),
+                Flexible(
+                  child: ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: items.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 12),
+                    itemBuilder: (context, index) {
+                      final item = items[index];
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: theme.colorScheme.primary.withOpacity(0.1),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              item['icon'] as IconData,
+                              size: 20,
+                              color: theme.colorScheme.primary,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  item['title'] as String,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  item['desc'] as String,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: theme.textTheme.bodySmall?.color?.withOpacity(0.8),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actionsPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+          actions: [
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: theme.colorScheme.primary,
+                  foregroundColor: theme.colorScheme.onPrimary,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+                onPressed: () => Navigator.of(ctx).pop(),
+                child: Text(
+                  isTr ? 'Devam Et' : 'Continue',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
