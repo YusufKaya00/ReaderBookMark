@@ -57,11 +57,8 @@ Future<void> _alarmEntry() async {
   const androidInit = AndroidInitializationSettings('ic_launcher');
   await notifier.initialize(const InitializationSettings(android: androidInit));
 
-  // 1. DIRECT CHECK: Inspect base manga pages of active bookmarks (up to 15 bookmarks)
-  // Prioritize active (reading) bookmarks
-  final activeItems = items.where((e) => e.readingState == 'reading').toList();
-  final otherItems = items.where((e) => e.readingState == 'notStarted').toList();
-  final bookmarksToCheck = [...activeItems, ...otherItems].take(15).toList();
+  // 1. DIRECT CHECK: Inspect base manga pages of active reading bookmarks (up to 10 bookmarks)
+  final bookmarksToCheck = items.where((e) => e.readingState == 'reading').take(10).toList();
 
   // Check bookmarks concurrently in chunks of 5
   for (int i = 0; i < bookmarksToCheck.length; i += 5) {
@@ -79,16 +76,41 @@ Future<void> _alarmEntry() async {
   }
 
   if (bookmarkSlugs.isNotEmpty) {
+    // Detect which hosts the user actually has in their bookmarks
+    final bookmarkedHosts = items.map((e) {
+      try {
+        return Uri.parse(e.url).host.toLowerCase().replaceAll('www.', '');
+      } catch (_) {
+        return '';
+      }
+    }).where((h) => h.isNotEmpty).toSet();
+
     final manualSites = sp.getStringList('tracked_urls') ?? <String>[];
-    final sitesToCheck = [...kNotificationAllowedHosts.map((h) => 'https://$h')];
+    final sitesToCheck = <String>[];
+    
+    // Add manual sites if they belong to bookmarked hosts
     for (final s in manualSites) {
-      if (!sitesToCheck.contains(s)) sitesToCheck.add(s);
+      try {
+        final host = Uri.parse(s).host.toLowerCase().replaceAll('www.', '');
+        if (bookmarkedHosts.contains(host)) {
+          sitesToCheck.add(s);
+        }
+      } catch (_) {}
+    }
+    
+    // Add kNotificationAllowedHosts if we have bookmarks on them
+    for (final h in kNotificationAllowedHosts) {
+      if (bookmarkedHosts.contains(h)) {
+        sitesToCheck.add('https://$h');
+      }
     }
 
-    // Check homepages concurrently in chunks of 3
-    for (int i = 0; i < sitesToCheck.length; i += 3) {
-      final chunk = sitesToCheck.sublist(i, (i + 3).clamp(0, sitesToCheck.length));
-      await Future.wait(chunk.map((siteUrl) => _checkHomepageForUpdates(siteUrl, bookmarkSlugs, sp, notifier, db)));
+    if (sitesToCheck.isNotEmpty) {
+      // Check homepages concurrently in chunks of 3
+      for (int i = 0; i < sitesToCheck.length; i += 3) {
+        final chunk = sitesToCheck.sublist(i, (i + 3).clamp(0, sitesToCheck.length));
+        await Future.wait(chunk.map((siteUrl) => _checkHomepageForUpdates(siteUrl, bookmarkSlugs, sp, notifier, db)));
+      }
     }
   }
 }
@@ -270,12 +292,20 @@ Future<void> _checkHomepageForUpdates(
       final href = a.attributes['href'];
       if (href == null || href.isEmpty) continue;
       
-      final linkText = a.text.trim();
       final linkUrl = href.startsWith('http') ? href : Uri.parse(siteUrl).replace(path: href).toString();
+      final lowerUrl = linkUrl.toLowerCase();
       
-      final linkSlug = _getMangaSlug(linkUrl);
-      if (linkSlug.isNotEmpty && bookmarkSlugs.containsKey(linkSlug)) {
-        final bookmarkedItem = bookmarkSlugs[linkSlug]!;
+      // Fast pre-filter: Check if the link URL contains any bookmarked slug
+      String? matchedSlug;
+      for (final slug in bookmarkSlugs.keys) {
+        if (lowerUrl.contains('/$slug/') || lowerUrl.contains('/$slug-') || lowerUrl.endsWith('/$slug')) {
+          matchedSlug = slug;
+          break;
+        }
+      }
+      
+      if (matchedSlug != null) {
+        final bookmarkedItem = bookmarkSlugs[matchedSlug]!;
         
         // Match! Check if we haven't notified for this URL
         final notifyKey = 'notified_$linkUrl';
@@ -284,6 +314,7 @@ Future<void> _checkHomepageForUpdates(
         if (bookmarkedItem.url != linkUrl && !alreadyNotified) {
           await sp.setBool(notifyKey, true);
           
+          final linkText = a.text.trim();
           final title = bookmarkedItem.title;
           final desc = linkText.isNotEmpty ? linkText : '${bookmarkedItem.title} sayfası güncellendi.';
           
