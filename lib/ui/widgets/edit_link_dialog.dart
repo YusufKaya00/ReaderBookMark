@@ -116,6 +116,7 @@ class _EditLinkDialogState extends State<EditLinkDialog> {
                   DropdownMenuItem(value: 'Manga', child: Text(context.tr('manga'))),
                   DropdownMenuItem(value: 'Kitap', child: Text(context.tr('book'))),
                   DropdownMenuItem(value: 'Makale', child: Text(context.tr('article'))),
+                  DropdownMenuItem(value: 'İzlenecekler', child: Text(context.tr('watchlist'))),
                 ],
                 onChanged: (v) => setState(() => _category = v ?? 'Genel'),
                 decoration: InputDecoration(

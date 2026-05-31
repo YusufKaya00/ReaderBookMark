@@ -94,6 +94,13 @@ class _HomeScreenState extends State<HomeScreen> {
     
     final items = [
       {
+        'icon': Icons.movie_outlined,
+        'title': isTr ? 'İzlenecekler Kategorisi' : 'Watchlist Category',
+        'desc': isTr 
+            ? 'İzlemek istediğiniz dizi, film ve videoları düzenli takip edebilmeniz için yeni kategori eklendi.' 
+            : 'A new category has been added so you can track movies, series, and videos you plan to watch.',
+      },
+      {
         'icon': Icons.cloud_sync,
         'title': isTr ? 'Toplu Link Ekleme, Dışa/İçe Aktarma' : 'Bulk Link Adding, Export & Import',
         'desc': isTr 
@@ -697,6 +704,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 _chip(context, library, 'Manga', context.tr('manga'), isCategory: true),
                 _chip(context, library, 'Kitap', context.tr('book'), isCategory: true),
                 _chip(context, library, 'Makale', context.tr('article'), isCategory: true),
+                _chip(context, library, 'İzlenecekler', context.tr('watchlist'), isCategory: true),
               ],
             ),
           ),
@@ -1146,6 +1154,7 @@ Future<String?> _pickCategory(BuildContext context) async {
           DropdownMenuItem(value: 'Manga', child: Text(context.tr('manga'))),
           DropdownMenuItem(value: 'Kitap', child: Text(context.tr('book'))),
           DropdownMenuItem(value: 'Makale', child: Text(context.tr('article'))),
+          DropdownMenuItem(value: 'İzlenecekler', child: Text(context.tr('watchlist'))),
         ],
         onChanged: (v) => temp = v ?? 'Genel',
       ),
