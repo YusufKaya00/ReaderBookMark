@@ -62,8 +62,8 @@ Future<void> _alarmEntry() async {
       debugPrint('Local notifications initialization failed: $e');
     }
 
-    // 1. DIRECT CHECK: Inspect base manga pages of active reading bookmarks (up to 10 bookmarks)
-    final bookmarksToCheck = items.where((e) => e.readingState == 'reading').take(10).toList();
+    // 1. DIRECT CHECK: Inspect base manga pages of active bookmarks (up to 15 bookmarks, excluding completed)
+    final bookmarksToCheck = items.where((e) => e.readingState != 'completed').take(15).toList();
 
     // Check bookmarks concurrently in chunks of 5
     for (int i = 0; i < bookmarksToCheck.length; i += 5) {
