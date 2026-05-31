@@ -34,6 +34,14 @@ jobs:
         id: buildnum
         run: echo "val=${GITHUB_RUN_NUMBER}" >> $GITHUB_OUTPUT
 
+      - name: Extract versionName from pubspec.yaml
+        id: ver
+        run: |
+          VER_LINE=$(grep '^version:' pubspec.yaml | head -n1 | sed 's/version:\s*//')
+          VERSION_NAME=$(echo "$VER_LINE" | cut -d'+' -f1)
+          echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
+          echo "build_number=${{ steps.buildnum.outputs.val }}" >> $GITHUB_OUTPUT
+
       - name: Build Android APK (release)
         run: flutter build apk --release --build-number ${{ steps.buildnum.outputs.val }}
 
@@ -44,25 +52,25 @@ jobs:
           echo "apk_path=$APK" >> $GITHUB_OUTPUT
           echo "sha256=$(sha256sum $APK | awk '{print $1}')" >> $GITHUB_OUTPUT
 
-      - name: Extract versionName from pubspec.yaml
-        id: ver
-        run: |
-          VER_LINE=$(grep '^version:' pubspec.yaml | head -n1 | sed 's/version:\s*//')
-          VERSION_NAME=$(echo "$VER_LINE" | cut -d'+' -f1)
-          echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
-          echo "build_number=${{ steps.buildnum.outputs.val }}" >> $GITHUB_OUTPUT
-
       - name: Create latest.json
         run: |
+          TAG_NAME="v${{ steps.ver.outputs.version_name }}+${{ steps.ver.outputs.build_number }}"
           cat > latest.json <<JSON
           {
             "versionName": "${{ steps.ver.outputs.version_name }}",
             "buildNumber": ${{ steps.ver.outputs.build_number }},
-            "apkUrl": "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/app-release.apk",
+            "apkUrl": "https://github.com/${{ github.repository }}/releases/download/${TAG_NAME}/app-release.apk",
             "sha256": "${{ steps.sha.outputs.sha256 }}",
-            "changelog": "Automated release for ${{ github.ref_name }}"
+            "changelog": "Otomatik güncelleme - sürüm ${TAG_NAME}"
           }
           JSON
+
+      - name: Delete existing release with same tag (if any)
+        run: |
+          TAG_NAME="v${{ steps.ver.outputs.version_name }}+${{ steps.ver.outputs.build_number }}"
+          gh release delete "$TAG_NAME" --yes --cleanup-tag 2>/dev/null || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -72,14 +80,9 @@ jobs:
           draft: false
           prerelease: false
           make_latest: true
-          generate_release_notes: false
-          fail_on_unmatched_files: true
-          files_glob: false
-          replace_existing_assets: true
+          generate_release_notes: true
           files: |
             build/app/outputs/flutter-apk/app-release.apk
             latest.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-

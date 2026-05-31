@@ -74,6 +74,12 @@ const Map<String, Map<String, String>> translations = {
     'filters': 'Filtreler',
     'translate': 'Çevir',
     'fetching_title': 'Başlık alınıyor...',
+    'export_json_file': 'JSON Dosyası Olarak Paylaş',
+    'export_json_clipboard': 'JSON Olarak Panoya Kopyala',
+    'export_urls_clipboard': 'Sadece Linkleri Panoya Kopyala',
+    'export_title': 'Kitaplığı Dışa Aktar',
+    'export_urls_copied': 'Tüm linkler panoya kopyalandı.',
+    'export_desc': 'Kitaplığınızı yedeklemek veya başka bir cihaza aktarmak için bir yöntem seçin.',
   },
   'en': {
     'title': 'Library',
@@ -146,12 +152,18 @@ const Map<String, Map<String, String>> translations = {
     'filters': 'Filters',
     'translate': 'Translate',
     'fetching_title': 'Fetching title...',
+    'export_json_file': 'Share as JSON File',
+    'export_json_clipboard': 'Copy JSON to Clipboard',
+    'export_urls_clipboard': 'Copy URLs Only to Clipboard',
+    'export_title': 'Export Library',
+    'export_urls_copied': 'All links copied to clipboard.',
+    'export_desc': 'Choose a method to backup your library or transfer to another device.',
   }
 };
 
 extension TranslationExtension on BuildContext {
   String tr(String key) {
-    final lang = watch<SettingsProvider>().languageCode;
+    final lang = read<SettingsProvider>().languageCode;
     return translations[lang]?[key] ?? key;
   }
 }

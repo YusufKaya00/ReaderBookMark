@@ -3,6 +3,7 @@ import 'dart:io' show Platform;
 import 'package:provider/provider.dart';
 import 'providers/settings_provider.dart';
 import 'providers/library_provider.dart';
+import 'providers/notification_provider.dart';
 import 'ui/screens/home_screen.dart';
 import 'background/new_chapter_check.dart';
 import 'package:workmanager/workmanager.dart';
@@ -11,10 +12,15 @@ import 'package:permission_handler/permission_handler.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  _ensureNotificationPermission();
-  initBackground();
+  
+  // Only initialize background tasks on mobile platforms
+  if (Platform.isAndroid || Platform.isIOS) {
+    _ensureNotificationPermission();
+    initBackground();
+    Workmanager().initialize(_backgroundHeadless, isInDebugMode: false);
+  }
+  
   runApp(const AppRoot());
-  Workmanager().initialize(_backgroundHeadless, isInDebugMode: false);
 }
 
 Future<void> _ensureNotificationPermission() async {
@@ -47,6 +53,7 @@ class AppRoot extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => SettingsProvider()),
         ChangeNotifierProvider(create: (_) => LibraryProvider()),
+        ChangeNotifierProvider(create: (_) => NotificationProvider()),
       ],
       child: Consumer<SettingsProvider>(
         builder: (context, settings, _) {

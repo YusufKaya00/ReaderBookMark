@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
@@ -16,7 +15,10 @@ import '../../update/update_service.dart';
 import 'about_screen.dart';
 import 'sites_screen.dart';
 import 'settings_screen.dart';
+import 'notifications_screen.dart';
 import '../../utils/translations.dart';
+import '../../utils/export_helper.dart';
+import '../../providers/notification_provider.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -177,6 +179,59 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ],
         if (!_selectionMode) ...[
+          // Notifications Star Badge
+          Consumer<NotificationProvider>(
+            builder: (ctx, notProvider, _) {
+              final count = notProvider.unreadCount;
+              return Stack(
+                alignment: Alignment.center,
+                children: [
+                  IconButton(
+                    tooltip: Localizations.localeOf(ctx).languageCode == 'tr' 
+                        ? 'Bildirimler' 
+                        : 'Notifications',
+                    icon: Icon(
+                      count > 0 ? Icons.star : Icons.star_border_outlined, 
+                      size: 24, 
+                      color: count > 0 ? Colors.amber : null,
+                    ),
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const NotificationsScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  if (count > 0)
+                    Positioned(
+                      right: 6,
+                      top: 6,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Colors.redAccent,
+                          shape: BoxShape.circle,
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: 16,
+                          minHeight: 16,
+                        ),
+                        child: Text(
+                          '$count',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            },
+          ),
           // Dark mode toggle
           IconButton(
             tooltip: settings.isDarkMode ? 'Light Mode' : 'Dark Mode',
@@ -191,38 +246,27 @@ class _HomeScreenState extends State<HomeScreen> {
             },
             icon: const Icon(Icons.settings, size: 22),
           ),
-          // Main menu
-          IconButton(
-            icon: const Icon(Icons.more_vert),
-            tooltip: 'Menü',
-            onPressed: () {
-              final RenderBox button = context.findRenderObject() as RenderBox;
-              final RenderBox overlay = Navigator.of(context).overlay!.context.findRenderObject() as RenderBox;
-              final RelativeRect position = RelativeRect.fromRect(
-                Rect.fromPoints(
-                  button.localToGlobal(Offset.zero, ancestor: overlay),
-                  button.localToGlobal(button.size.bottomRight(Offset.zero), ancestor: overlay),
-                ),
-                Offset.zero & overlay.size,
-              );
-              showMenu<String>(
-                context: context,
-                position: position,
-                items: [
-                  _menuItem(Icons.notifications_active_outlined, context.tr('check_chapters'), 'check_chapters'),
-                  _menuItem(Icons.system_update, context.tr('check_update'), 'check_update'),
-                  _menuItem(Icons.share, context.tr('export'), 'export'),
-                  const PopupMenuDivider(),
-                  _menuItem(Icons.public, context.tr('manage_sites'), 'sites'),
-                  _menuItem(Icons.info_outline, context.tr('about'), 'about'),
-                ],
-              ).then((value) {
-                if (value != null) {
-                  _handleMenuAction(value, context);
-                }
-              });
-            },
-          ),
+          // Main menu - çevirileri önceden hesapla (itemBuilder içinde context.watch kullanılamaz)
+          Builder(builder: (btnContext) {
+            final trCheckChapters = context.tr('check_chapters');
+            final trCheckUpdate = context.tr('check_update');
+            final trExport = context.tr('export');
+            final trManageSites = context.tr('manage_sites');
+            final trAbout = context.tr('about');
+            return PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert),
+              tooltip: 'Menü',
+              onSelected: (value) => _handleMenuAction(value, context),
+              itemBuilder: (_) => [
+                _menuItem(Icons.notifications_active_outlined, trCheckChapters, 'check_chapters'),
+                _menuItem(Icons.system_update, trCheckUpdate, 'check_update'),
+                _menuItem(Icons.share, trExport, 'export'),
+                const PopupMenuDivider(),
+                _menuItem(Icons.public, trManageSites, 'sites'),
+                _menuItem(Icons.info_outline, trAbout, 'about'),
+              ],
+            );
+          }),
         ],
         // Undo button
         if (_undoStack.isNotEmpty)
@@ -259,31 +303,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _handleMenuAction(String v, BuildContext context) async {
-    final prov = context.read<LibraryProvider>();
     if (v == 'export') {
-      try {
-        final data = prov.items.map((e) => e.toMap()).toList();
-        final jsonStr = const JsonEncoder.withIndent('  ').convert(data);
-        final result = await Share.shareXFiles(
-          [XFile.fromData(
-            utf8.encode(jsonStr),
-            mimeType: 'application/json',
-            name: 'kitaplik_yedek_${DateTime.now().millisecondsSinceEpoch}.json',
-          )],
-          subject: 'Kitaplık Dışa Aktarım',
-        );
-        if (result.status == ShareResultStatus.success && context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(context.tr('export_success'))),
-          );
-        }
-      } catch (e) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('${context.tr('error')}: $e')),
-          );
-        }
-      }
+      showExportDialog(context);
     } else if (v == 'check_chapters') {
       _showLoadingThen(context, () => runCheckNow(), context.tr('check_chapters_done'));
     } else if (v == 'check_update') {
@@ -292,11 +313,11 @@ class _HomeScreenState extends State<HomeScreen> {
         barrierDismissible: false,
         builder: (_) => const Center(child: CircularProgressIndicator()),
       );
-      final available = await UpdateService.isUpdateAvailable();
+      final manifest = await UpdateService.getUpdateInfo();
       if (!mounted) return;
       Navigator.of(context).pop();
-      if (available) {
-        _showUpdateDialog(context);
+      if (manifest != null) {
+        _showUpdateDialog(context, manifest);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(context.tr('app_up_to_date'))),
@@ -317,27 +338,91 @@ class _HomeScreenState extends State<HomeScreen> {
     ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(doneMsg)));
   }
 
-  void _showUpdateDialog(BuildContext ctx) {
+  void _showUpdateDialog(BuildContext ctx, UpdateManifest manifest) {
     showDialog(
       context: ctx,
       builder: (_) => AlertDialog(
         title: Text(ctx.tr('update_available')),
-        content: Text(ctx.tr('update_prompt')),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('${ctx.tr('languageCode') == 'tr' ? 'Yeni sürüm' : 'New version'}: ${manifest.versionName}'),
+            if (manifest.changelog != null && manifest.changelog!.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(
+                manifest.changelog!,
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ],
+            const SizedBox(height: 12),
+            Text(ctx.tr('update_prompt')),
+          ],
+        ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: Text(ctx.tr('cancel'))),
           ElevatedButton(
             onPressed: () async {
               Navigator.pop(ctx);
-              ScaffoldMessenger.of(ctx).showSnackBar(
-                SnackBar(content: Text(ctx.tr('downloading')), duration: const Duration(seconds: 4)),
-              );
-              await UpdateService.startUpdate();
+              _startDownloadWithProgress(ctx, manifest);
             },
             child: Text(ctx.tr('update_btn')),
           ),
         ],
       ),
     );
+  }
+
+  void _startDownloadWithProgress(BuildContext ctx, UpdateManifest manifest) {
+    final progressNotifier = ValueNotifier<double>(0);
+    
+    showDialog(
+      context: ctx,
+      barrierDismissible: false,
+      builder: (_) => PopScope(
+        canPop: false,
+        child: AlertDialog(
+          content: ValueListenableBuilder<double>(
+            valueListenable: progressNotifier,
+            builder: (_, progress, __) => Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircularProgressIndicator(value: progress > 0 ? progress : null),
+                const SizedBox(height: 16),
+                Text(
+                  progress > 0
+                      ? '${ctx.tr('downloading')} %${(progress * 100).toInt()}'
+                      : ctx.tr('downloading'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    UpdateService.startUpdate(
+      manifest: manifest,
+      onProgress: (received, total) {
+        if (total > 0) {
+          progressNotifier.value = received / total;
+        }
+      },
+    ).then((_) {
+      if (mounted) Navigator.of(ctx).pop();
+    }).catchError((e) {
+      if (mounted) {
+        Navigator.of(ctx).pop();
+        ScaffoldMessenger.of(ctx).showSnackBar(
+          SnackBar(
+            content: Text('${ctx.tr('error')}: $e'),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
+    });
   }
 
   // ─── Filter Row (two separate rows) ───
@@ -449,6 +534,7 @@ class _HomeScreenState extends State<HomeScreen> {
       addAutomaticKeepAlives: false,
       addRepaintBoundaries: true,
       cacheExtent: 500,
+      itemExtent: 130, // Sabit yükseklik = daha hızlı layout
       itemBuilder: (context, index) {
         final item = library.items[index];
         final selected = item.id != null && _selectedIds.contains(item.id);
@@ -485,16 +571,16 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     return Card(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: 10),
       elevation: selected ? 6 : 2,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         side: selected
             ? BorderSide(color: theme.colorScheme.primary, width: 2)
             : BorderSide.none,
       ),
       child: InkWell(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         onTap: () => _openReader(context, item),
         onLongPress: () {
           if (item.id == null) return;
@@ -507,74 +593,76 @@ class _HomeScreenState extends State<HomeScreen> {
           });
         },
         child: Padding(
-          padding: const EdgeInsets.all(10),
+          padding: const EdgeInsets.all(12),
           child: Row(
             children: [
-              // Cover thumbnail
+              // Cover thumbnail - daha büyük
               ClipRRect(
-                borderRadius: BorderRadius.circular(10),
+                borderRadius: BorderRadius.circular(12),
                 child: SizedBox(
-                  width: 56,
-                  height: 72,
+                  width: 72,
+                  height: 96,
                   child: item.coverPath != null && item.coverPath!.isNotEmpty
                       ? Image.network(
                           item.coverPath!,
                           fit: BoxFit.cover,
                           errorBuilder: (_, __, ___) => _defaultCover(stateColor),
-                          cacheWidth: 112, // Performance: cache smaller size
+                          cacheWidth: 144, // Performance: cache smaller size
                         )
                       : _defaultCover(stateColor),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 14),
 
               // Title + badges
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Text(
                       item.title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, height: 1.3),
+                      style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16, height: 1.3),
                     ),
-                    const SizedBox(height: 6),
-                    Row(
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 4,
                       children: [
                         // Category badge
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
-                            color: theme.colorScheme.secondary.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(8),
+                            color: theme.colorScheme.secondary.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(10),
                           ),
                           child: Text(
                             item.category,
                             style: TextStyle(
                               color: theme.colorScheme.secondary,
-                              fontSize: 10,
+                              fontSize: 11,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
                         ),
-                        const SizedBox(width: 6),
                         // State badge
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
-                            color: stateColor.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(8),
+                            color: stateColor.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(10),
                             border: Border.all(color: stateColor.withValues(alpha: 0.3)),
                           ),
                           child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(stateIcon, size: 12, color: stateColor),
+                              Icon(stateIcon, size: 13, color: stateColor),
                               const SizedBox(width: 4),
                               Text(
                                 stateLabel,
-                                style: TextStyle(color: stateColor, fontSize: 10, fontWeight: FontWeight.bold),
+                                style: TextStyle(color: stateColor, fontSize: 11, fontWeight: FontWeight.bold),
                               ),
                             ],
                           ),
@@ -584,12 +672,12 @@ class _HomeScreenState extends State<HomeScreen> {
                     // Scroll progress bar
                     if (item.lastScrollPosition > 0)
                       Padding(
-                        padding: const EdgeInsets.only(top: 6),
+                        padding: const EdgeInsets.only(top: 8),
                         child: ClipRRect(
-                          borderRadius: BorderRadius.circular(2),
+                          borderRadius: BorderRadius.circular(3),
                           child: LinearProgressIndicator(
                             value: (item.lastScrollPosition / 5000).clamp(0.0, 1.0),
-                            minHeight: 3,
+                            minHeight: 4,
                             backgroundColor: Colors.grey.shade300,
                             valueColor: AlwaysStoppedAnimation(stateColor),
                           ),
@@ -599,11 +687,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
 
-              // Three-dot menu with simpler approach
+              // Three-dot menu
               IconButton(
-                icon: Icon(Icons.more_vert, color: theme.iconTheme.color),
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(),
+                icon: Icon(Icons.more_vert, color: theme.iconTheme.color, size: 24),
+                padding: const EdgeInsets.all(4),
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                 onPressed: () => _showItemMenu(context, item),
               ),
             ],
@@ -698,7 +786,7 @@ class _HomeScreenState extends State<HomeScreen> {
           end: Alignment.bottomRight,
         ),
       ),
-      child: const Center(child: Icon(Icons.menu_book, size: 28, color: Colors.white)),
+      child: const Center(child: Icon(Icons.menu_book, size: 34, color: Colors.white)),
     );
   }
 

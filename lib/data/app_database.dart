@@ -14,8 +14,9 @@ class AppDatabase {
   AppDatabase._internal();
 
   static const _dbName = 'library_links.db';
-  static const _dbVersion = 2;
+  static const _dbVersion = 3;
   static const tableLinks = 'links';
+  static const tableNotifications = 'notifications';
 
   Database? _db;
 
@@ -52,12 +53,45 @@ class AppDatabase {
             'CREATE INDEX IF NOT EXISTS idx_links_category ON $tableLinks(category)');
         await db.execute(
             'CREATE INDEX IF NOT EXISTS idx_links_title ON $tableLinks(title)');
+
+        await db.execute('''
+        CREATE TABLE $tableNotifications (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          link_id INTEGER,
+          title TEXT NOT NULL,
+          message TEXT NOT NULL,
+          url TEXT NOT NULL,
+          cover_path TEXT,
+          is_read INTEGER NOT NULL DEFAULT 0,
+          created_at INTEGER NOT NULL
+        );
+        ''');
+        await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_notifications_created ON $tableNotifications(created_at)');
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           try {
             await db.execute(
                 "ALTER TABLE $tableLinks ADD COLUMN reading_state TEXT NOT NULL DEFAULT 'notStarted'");
+          } catch (_) {}
+        }
+        if (oldVersion < 3) {
+          try {
+            await db.execute('''
+            CREATE TABLE IF NOT EXISTS $tableNotifications (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              link_id INTEGER,
+              title TEXT NOT NULL,
+              message TEXT NOT NULL,
+              url TEXT NOT NULL,
+              cover_path TEXT,
+              is_read INTEGER NOT NULL DEFAULT 0,
+              created_at INTEGER NOT NULL
+            );
+            ''');
+            await db.execute(
+                'CREATE INDEX IF NOT EXISTS idx_notifications_created ON $tableNotifications(created_at)');
           } catch (_) {}
         }
       },
@@ -133,6 +167,50 @@ class AppDatabase {
     final db = await database;
     final placeholders = List.filled(ids.length, '?').join(',');
     return await db.rawUpdate('UPDATE $tableLinks SET category = ? WHERE id IN ($placeholders)', [category, ...ids]);
+  }
+
+  // --- NOTIFICATION METHODS ---
+
+  Future<int> insertNotification(Map<String, dynamic> data) async {
+    final db = await database;
+    return db.insert(tableNotifications, data);
+  }
+
+  Future<List<Map<String, dynamic>>> getAllNotifications() async {
+    final db = await database;
+    return db.query(tableNotifications, orderBy: 'created_at DESC');
+  }
+
+  Future<int> markNotificationAsRead(int id) async {
+    final db = await database;
+    return db.update(
+      tableNotifications,
+      {'is_read': 1},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<int> markAllNotificationsAsRead() async {
+    final db = await database;
+    return db.update(
+      tableNotifications,
+      {'is_read': 1},
+    );
+  }
+
+  Future<int> deleteNotification(int id) async {
+    final db = await database;
+    return db.delete(
+      tableNotifications,
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+  }
+
+  Future<int> deleteAllNotifications() async {
+    final db = await database;
+    return db.delete(tableNotifications);
   }
 }
 
