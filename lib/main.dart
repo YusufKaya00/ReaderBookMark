@@ -26,7 +26,7 @@ void main() {
 Future<void> _ensureNotificationPermission() async {
   if (!Platform.isAndroid) return;
   final plugin = FlutterLocalNotificationsPlugin();
-  const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+  const androidInit = AndroidInitializationSettings('ic_launcher');
   await plugin.initialize(const InitializationSettings(android: androidInit));
 
   // Android 13+ için runtime bildirim izni

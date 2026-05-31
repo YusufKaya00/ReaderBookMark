@@ -153,9 +153,6 @@ class UpdateService {
         },
         options: Options(
           receiveTimeout: const Duration(minutes: 5),
-          headers: {
-            'Accept': 'application/octet-stream',
-          },
         ),
       );
 

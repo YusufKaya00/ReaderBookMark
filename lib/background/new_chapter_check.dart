@@ -54,7 +54,7 @@ Future<void> _alarmEntry() async {
   final sp = await SharedPreferences.getInstance();
   final notifier = FlutterLocalNotificationsPlugin();
   
-  const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+  const androidInit = AndroidInitializationSettings('ic_launcher');
   await notifier.initialize(const InitializationSettings(android: androidInit));
 
   // 1. DIRECT CHECK: Inspect base manga pages of active bookmarks (up to 15 bookmarks)
