@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
@@ -32,6 +33,19 @@ class AboutScreen extends StatelessWidget {
               Text('Yusuf Kaya', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600)),
               const SizedBox(height: 8),
               Text('ReaderBookMark', style: theme.textTheme.bodyMedium),
+              const SizedBox(height: 8),
+              FutureBuilder<PackageInfo>(
+                future: PackageInfo.fromPlatform(),
+                builder: (context, snapshot) {
+                  if (snapshot.hasData) {
+                    return Text(
+                      'v${snapshot.data!.version}+${snapshot.data!.buildNumber}',
+                      style: theme.textTheme.bodySmall?.copyWith(color: Colors.grey),
+                    );
+                  }
+                  return const SizedBox();
+                },
+              ),
               const SizedBox(height: 24),
               ElevatedButton.icon(
                 onPressed: _openGithub,

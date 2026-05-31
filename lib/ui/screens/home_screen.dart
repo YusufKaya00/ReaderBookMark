@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../models/link_item.dart';
 import '../../providers/library_provider.dart';
@@ -35,10 +36,24 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _loaded = false;
   bool _showFilters = false; // Filter visibility toggle
 
+  String _versionString = '';
+
   @override
   void initState() {
     super.initState();
     _loadData();
+    _loadVersion();
+  }
+
+  Future<void> _loadVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (mounted) {
+        setState(() {
+          _versionString = 'v${info.version}+${info.buildNumber}';
+        });
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadData() async {
@@ -264,6 +279,22 @@ class _HomeScreenState extends State<HomeScreen> {
                 const PopupMenuDivider(),
                 _menuItem(Icons.public, trManageSites, 'sites'),
                 _menuItem(Icons.info_outline, trAbout, 'about'),
+                if (_versionString.isNotEmpty) ...[
+                  const PopupMenuDivider(),
+                  PopupMenuItem<String>(
+                    enabled: false,
+                    child: Center(
+                      child: Text(
+                        _versionString,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ],
             );
           }),
