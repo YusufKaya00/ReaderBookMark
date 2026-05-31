@@ -58,7 +58,16 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
         release {
-            signingConfig = signingConfigs.getByName("release")
+            val keystorePath = if (keystoreProperties.containsKey("storeFile")) keystoreProperties["storeFile"] as String else ""
+            val hasKeystore = keystorePropertiesFile.exists() && 
+                             keystorePath.isNotEmpty() && 
+                             file(keystorePath).exists()
+            
+            if (hasKeystore) {
+                signingConfig = signingConfigs.getByName("release")
+            } else {
+                signingConfig = signingConfigs.getByName("debug")
+            }
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
